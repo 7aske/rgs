@@ -12,6 +12,7 @@ struct Proj {
 
 struct Lang {
     name: String,
+    path: String,
     projs: Vec<Proj>,
 }
 
@@ -26,9 +27,10 @@ impl Proj {
 }
 
 impl Lang {
-    fn new(name: &str) -> Self {
+    fn new(name: &str, path: &str) -> Self {
         Lang {
             name: String::from(name),
+            path: String::from(path),
             projs: vec![],
         }
     }
@@ -36,7 +38,6 @@ impl Lang {
         self.projs.push(proj)
     }
 }
-
 
 
 fn main() {
@@ -163,17 +164,29 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) 
         if path.is_dir() {
             let nstr = path.file_name().unwrap().to_str().unwrap();
             if is_git_repo(&path) {
+                let parstr = path.parent().unwrap().to_str().unwrap();
                 *count += 1;
                 match langs.pop() {
-                    None => {}
+                    None => {
+                        let mut oddl = Lang::new(nstr, pstr);
+                        oddl.add_proj(Proj::new(nstr, pstr));
+                        langs.push(oddl);
+                    }
                     Some(mut lang) => {
-                        lang.add_proj(Proj::new(nstr, pstr));
-                        langs.push(lang)
+                        if parstr.starts_with(&lang.path) {
+                            lang.add_proj(Proj::new(nstr, pstr));
+                            langs.push(lang);
+                        } else {
+                            langs.push(lang);
+                            let mut oddl = Lang::new(nstr, pstr);
+                            oddl.add_proj(Proj::new(nstr, pstr));
+                            langs.push(oddl);
+                        }
                     }
                 }
             } else {
                 if !nstr.starts_with(".") && !nstr.starts_with("_") {
-                    langs.push(Lang::new(nstr));
+                    langs.push(Lang::new(nstr, pstr));
                     list_dir(pstr, depth, count, langs)?;
                 }
             }
