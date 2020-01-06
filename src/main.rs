@@ -1,8 +1,11 @@
-use std::io;
+use std::{io, thread};
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 struct Proj {
     name: String,
@@ -154,10 +157,25 @@ fn long_long_print(langs: &Vec<Lang>) {
 }
 
 fn update_status(langs: &mut Vec<Lang>) {
-    for l in langs {
-        for p in &mut l.projs {
-            check_status(p);
-        }
+    let (tx, rx) = mpsc::channel();
+    let mut handles: Vec<JoinHandle<()>> = Vec::new();
+    while !langs.is_empty() {
+        let tx_local = mpsc::Sender::clone(&tx);
+        let mut l = langs.pop().unwrap();
+        let handle = thread::spawn(move || {
+            for p in &mut l.projs {
+                check_status(p);
+            }
+            tx_local.send(l).unwrap();
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join();
+    }
+    drop(tx);
+    for lang in rx {
+        langs.push(lang);
     }
 }
 
