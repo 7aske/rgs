@@ -16,6 +16,12 @@ struct Lang {
     projs: Vec<Proj>,
 }
 
+enum PrintType {
+    LongPrint,
+    LongLongPrint,
+    ShortPrint,
+}
+
 impl Proj {
     fn new(name: &str, path: &str) -> Self {
         Proj {
@@ -41,10 +47,9 @@ impl Lang {
 
 
 fn main() {
-    let mut color: bool = true;
-    let mut long_print: bool = false;
-    let mut long_long_print: bool = false;
-    let mut dir_print: bool = false;
+    let mut color = true;
+    let mut ptype = PrintType::ShortPrint;
+    let mut dir_print = false;
 
     let mut langs = Vec::new();
     let mut count = 0;
@@ -62,8 +67,8 @@ fn main() {
         _ => {
             for arg in args {
                 match arg.as_str() {
-                    "-l" => long_print = true,
-                    "-ll" => long_long_print = true,
+                    "-l" => ptype = PrintType::LongPrint,
+                    "-ll" => ptype = PrintType::LongLongPrint,
                     "--no-color" => color = false,
                     "-d" => dir_print = true,
                     _ => {}
@@ -75,65 +80,107 @@ fn main() {
 
     list_dir(code.as_str(), 2, &mut count, &mut langs).expect("ERROR: Failed reading 'CODE' directory.");
 
-    for l in &mut langs {
+    update_status(&mut langs);
+
+    match ptype {
+        PrintType::LongPrint => long_print(&langs),
+        PrintType::LongLongPrint => long_long_print(&langs),
+        _ => short_print(&langs, dir_print),
+    }
+}
+
+fn short_print(langs: &Vec<Lang>, dir_print: bool) {
+    for l in langs {
+        for p in &l.projs {
+            if !p.is_ok {
+                if dir_print {
+                    println!("{:32}", p.path);
+                } else {
+                    println!("{:16} {:16}", l.name, p.name);
+                }
+            }
+        }
+    }
+}
+
+fn long_print(langs: &Vec<Lang>) {
+    for l in langs {
+        println!("{:16} {:16}", l.name, l.projs.len());
+        for p in &l.projs {
+            if !p.is_ok {
+                println!("{:16} {:16}", l.name, p.name);
+            }
+        }
+    }
+}
+
+fn long_long_print(langs: &Vec<Lang>) {
+    for (i, l) in &mut langs.iter().enumerate() {
+        if i == langs.len() - 1 {
+            println!("└──{} ({})", l.name, l.projs.len());
+        } else {
+            println!("├──{} ({})", l.name, l.projs.len());
+        }
+        for (j, p) in &mut l.projs.iter().enumerate() {
+            if i == langs.len() - 1 {
+                if j == l.projs.len() - 1 {
+                    if p.is_ok {
+                        println!("   └──{}", p.name);
+                    } else {
+                        println!("   └──{}  *", p.name);
+                    }
+                } else if p.is_ok {
+                    println!("   ├──{}", p.name);
+                } else {
+                    println!("   ├──{}  *", p.name);
+                }
+            } else {
+                if j == l.projs.len() - 1 {
+                    if p.is_ok {
+                        println!("│  └──{}", p.name);
+                    } else {
+                        println!("│  └──{}  *", p.name);
+                    }
+                } else {
+                    if p.is_ok {
+                        println!("│  ├──{}", p.name);
+                    } else {
+                        println!("│  ├──{}  *", p.name);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn update_status(langs: &mut Vec<Lang>) {
+    for l in langs {
         for p in &mut l.projs {
             check_status(p);
         }
     }
+}
 
-    if !long_long_print {
-        for l in &mut langs {
-            if long_print {
-                println!("{:16} {:16}", l.name, l.projs.len());
-            }
-            for p in &mut l.projs {
-                if !p.is_ok {
-                    if dir_print {
-                        println!("{:32}", p.path);
-                    } else {
-                        println!("{:16} {:16}", l.name, p.name);
-                    }
-                }
-            }
-        }
-    } else {
-        for (i, l) in &mut langs.iter().enumerate() {
-            if i == langs.len() - 1 {
-                println!("└──{} ({})", l.name, l.projs.len());
+fn check_status(proj: &mut Proj) -> bool {
+    return match process::Command::new("git")
+        .arg("-C")
+        .arg((*proj).path.as_str())
+        .arg("status")
+        .arg("--porcelain")
+        .output() {
+        Ok(out) => {
+            if out.stdout.len() == 0 {
+                true
             } else {
-                println!("├──{} ({})", l.name, l.projs.len());
-            }
-            for (j, p) in &mut l.projs.iter().enumerate() {
-                if i == langs.len() - 1 {
-                    if j == l.projs.len() - 1 {
-                        if p.is_ok {
-                            println!("   └──{}", p.name);
-                        } else {
-                            println!("   └──{}  *", p.name);
-                        }
-                    } else if p.is_ok {
-                        println!("   ├──{}", p.name);
-                    } else {
-                        println!("   ├──{}  *", p.name);
-                    }
-                } else {
-                    if j == l.projs.len() - 1 {
-                        if p.is_ok {
-                            println!("│  └──{}", p.name);
-                        } else {
-                            println!("│  └──{}  *", p.name);
-                        }
-                    } else {
-                        if p.is_ok {
-                            println!("│  ├──{}", p.name);
-                        } else {
-                            println!("│  ├──{}  *", p.name);
-                        }
-                    }
-                }
+                proj.is_ok = false;
+                false
             }
         }
-    }
+        Err(_) => {
+            proj.is_ok = false;
+            false
+        }
+    };
 }
 
 fn is_git_repo(path: &Path) -> bool {
@@ -195,23 +242,3 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) 
     Ok(())
 }
 
-fn check_status(proj: &mut Proj) -> bool {
-    return match process::Command::new("git")
-        .arg("-C")
-        .arg(proj.path.as_str())
-        .arg("status")
-        .arg("--porcelain")
-        .output() {
-        Ok(out) => {
-            if out.stdout.len() == 0 {
-                return true;
-            }
-            proj.is_ok = false;
-            false
-        }
-        Err(_) => {
-            proj.is_ok = false;
-            false
-        }
-    };
-}
