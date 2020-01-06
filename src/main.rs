@@ -38,8 +38,6 @@ impl Lang {
 }
 
 
-static IGNORED: [&str; 1] = ["_test"];
-
 
 fn main() {
     let mut color: bool = true;
@@ -174,7 +172,7 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) 
                     }
                 }
             } else {
-                if !IGNORED.contains(&nstr) {
+                if !nstr.starts_with(".") && !nstr.starts_with("_") {
                     langs.push(Lang::new(nstr));
                     list_dir(pstr, depth, count, langs)?;
                 }
