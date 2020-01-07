@@ -6,6 +6,7 @@ use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use std::error::Error;
 
 struct Proj {
     name: String,
@@ -81,14 +82,17 @@ fn main() {
     }
 
 
-    list_dir(code.as_str(), 2, &mut count, &mut langs).expect("ERROR: Failed reading 'CODE' directory.");
-
-    update_status(&mut langs);
-
-    match ptype {
-        PrintType::LongPrint => long_print(&langs),
-        PrintType::LongLongPrint => long_long_print(&langs),
-        _ => short_print(&langs, dir_print),
+    match list_dir(code.as_str(), 2, &mut count, &mut langs) {
+        Ok(_) => {
+            update_status(&mut langs);
+            langs.sort_by(|a, b| a.name.cmp(&b.name));
+            match ptype {
+                PrintType::LongPrint => long_print(&langs),
+                PrintType::LongLongPrint => long_long_print(&langs),
+                _ => short_print(&langs, dir_print),
+            }
+        }
+        Err(err) => { eprintln!("ERROR: {}", err.to_string()) }
     }
 }
 
@@ -108,10 +112,12 @@ fn short_print(langs: &Vec<Lang>, dir_print: bool) {
 
 fn long_print(langs: &Vec<Lang>) {
     for l in langs {
-        println!("{:16} {:16}", l.name, l.projs.len());
-        for p in &l.projs {
-            if !p.is_ok {
-                println!("{:16} {:16}", l.name, p.name);
+        if l.projs.len() > 0 {
+            println!("{:16} {:16}", l.name, l.projs.len());
+            for p in &l.projs {
+                if !p.is_ok {
+                    println!("{:16} {:16}", l.name, p.name);
+                }
             }
         }
     }
@@ -207,7 +213,7 @@ fn is_git_repo(path: &Path) -> bool {
         Ok(dir) => {
             dir.into_iter().any(|x| {
                 match x {
-                    Ok(e) => e.file_name() == ".git",
+                    Ok(e) => e.file_name() == ".git" && e.path().is_dir(),
                     Err(_) => false,
                 }
             })
@@ -228,8 +234,8 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) 
         let pstr = path.to_str().unwrap();
         if path.is_dir() {
             let nstr = path.file_name().unwrap().to_str().unwrap();
+            let parstr = path.parent().unwrap().to_str().unwrap();
             if is_git_repo(&path) {
-                let parstr = path.parent().unwrap().to_str().unwrap();
                 *count += 1;
                 match langs.pop() {
                     None => {
