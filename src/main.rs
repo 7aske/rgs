@@ -1,3 +1,5 @@
+#![allow(unused_must_use)]
+
 use std::{io, thread};
 use std::env;
 use std::fs;
@@ -5,8 +7,6 @@ use std::path::Path;
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
-use std::error::Error;
 
 struct Proj {
     name: String,
@@ -18,6 +18,7 @@ struct Lang {
     name: String,
     path: String,
     projs: Vec<Proj>,
+    not_ok: i32,
 }
 
 enum PrintType {
@@ -42,6 +43,7 @@ impl Lang {
             name: String::from(name),
             path: String::from(path),
             projs: vec![],
+            not_ok: 0,
         }
     }
     fn add_proj(&mut self, proj: Proj) {
@@ -51,7 +53,6 @@ impl Lang {
 
 
 fn main() {
-    let mut color = true;
     let mut ptype = PrintType::ShortPrint;
     let mut dir_print = false;
 
@@ -73,7 +74,6 @@ fn main() {
                 match arg.as_str() {
                     "-l" => ptype = PrintType::LongPrint,
                     "-ll" => ptype = PrintType::LongLongPrint,
-                    "--no-color" => color = false,
                     "-d" => dir_print = true,
                     _ => {}
                 }
@@ -84,7 +84,7 @@ fn main() {
 
     match list_dir(code.as_str(), 2, &mut count, &mut langs) {
         Ok(_) => {
-            update_status(&mut langs);
+            update_langs(&mut langs);
             langs.sort_by(|a, b| a.name.cmp(&b.name));
             match ptype {
                 PrintType::LongPrint => long_print(&langs),
@@ -111,16 +111,19 @@ fn short_print(langs: &Vec<Lang>, dir_print: bool) {
 }
 
 fn long_print(langs: &Vec<Lang>) {
+    let mut summary = String::from("\n");
+
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:16} {:16}", l.name, l.projs.len());
+            println!("{:8} {:4} {:2} {}", l.name, l.projs.len(), if l.not_ok > 0 { l.not_ok.to_string() } else { "".to_string() },  l.path);
             for p in &l.projs {
                 if !p.is_ok {
-                    println!("{:16} {:16}", l.name, p.name);
+                    summary += format!("{:16} {:16}\n", l.name, p.name).as_str();
                 }
             }
         }
     }
+    print!("{}", summary);
 }
 
 fn long_long_print(langs: &Vec<Lang>) {
@@ -162,22 +165,46 @@ fn long_long_print(langs: &Vec<Lang>) {
     }
 }
 
-fn update_status(langs: &mut Vec<Lang>) {
+
+fn update_projs(lang: &mut Lang) {
+    let (txp, rxp) = mpsc::channel();
+    let mut phandles: Vec<JoinHandle<()>> = Vec::new();
+
+    while !lang.projs.is_empty() {
+        let txp_local = mpsc::Sender::clone(&txp);
+        let mut proj = lang.projs.pop().unwrap();
+        let phandle = thread::spawn(move || {
+            proj.is_ok = git_is_ok(&proj.path);
+            txp_local.send(proj);
+        });
+        phandles.push(phandle);
+    }
+    for phandle in phandles {
+        phandle.join();
+    }
+    drop(txp);
+    for proj in rxp {
+        if !proj.is_ok {
+            lang.not_ok += 1;
+        }
+        lang.projs.push(proj);
+    }
+}
+
+fn update_langs(langs: &mut Vec<Lang>) {
     let (tx, rx) = mpsc::channel();
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     while !langs.is_empty() {
         let tx_local = mpsc::Sender::clone(&tx);
         let mut l = langs.pop().unwrap();
         let handle = thread::spawn(move || {
-            for p in &mut l.projs {
-                check_status(p);
-            }
+            update_projs(&mut l);
             tx_local.send(l).unwrap();
         });
         handles.push(handle);
     }
     for handle in handles {
-        handle.join();
+        let _ = handle.join();
     }
     drop(tx);
     for lang in rx {
@@ -185,25 +212,15 @@ fn update_status(langs: &mut Vec<Lang>) {
     }
 }
 
-fn check_status(proj: &mut Proj) -> bool {
+fn git_is_ok(path: &str) -> bool {
     return match process::Command::new("git")
         .arg("-C")
-        .arg((*proj).path.as_str())
+        .arg(path)
         .arg("status")
         .arg("--porcelain")
         .output() {
-        Ok(out) => {
-            if out.stdout.len() == 0 {
-                true
-            } else {
-                proj.is_ok = false;
-                false
-            }
-        }
-        Err(_) => {
-            proj.is_ok = false;
-            false
-        }
+        Ok(out) => out.stdout.len() == 0,
+        Err(_) => false
     };
 }
 

@@ -60,15 +60,16 @@ Few options are available that pretty print the stats:
 `-l` - shows all categories and number of repositories in them. Below that are listed all the uncommitted repositories.
 
 ```
-category1           2
-category1          repo1
-category2           5
-category3          22
-category3          repo2  
-category3          repo5  
-category3          repo8
-category4          12
-category5           3
+category1        8    /path/to/category1
+category2        5    /path/to/category2
+category3        2 1  /path/to/category3
+category4        2    /path/to/category4
+category5        6    /path/to/category5
+category6        3 2  /path/to/category6
+
+category3        repo2           
+category6        repo1                        
+category6        repo3           
 
   
   
@@ -95,4 +96,4 @@ category5           3
 └── repository2 (1)
 ```
 
-`-d` - outputs the absolute path to the repository. Assumes `--no-color`. Useful for `dmenu` scripting.
+`-d` - outputs the absolute path to the repository. Useful for `dmenu` scripting.
