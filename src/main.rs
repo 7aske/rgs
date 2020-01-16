@@ -60,6 +60,7 @@ fn main() {
     let mut codeignore = Vec::new();
     let mut langs = Vec::new();
     let mut count = 0;
+    let mut path = String::new();
     let code = match env::var("CODE") {
         Ok(val) => val,
         Err(_) => {
@@ -89,12 +90,19 @@ fn main() {
                     "-l" => ptype = PrintType::LongPrint,
                     "-ll" => ptype = PrintType::LongLongPrint,
                     "-d" => dir_print = true,
+                    "." => path = String::from(&arg),
                     _ => {}
                 }
             }
         }
     }
-
+    if path.as_str() != "" {
+        let cwd = env::current_dir().unwrap_or_default();
+        let path = String::from(cwd.join(Path::new(&path)).to_str().unwrap_or_default());
+        let res = git_status(&path);
+        print!("{}", res);
+        return;
+    }
 
     match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore) {
         Ok(_) => {
@@ -235,6 +243,18 @@ fn git_is_ok(path: &str) -> bool {
         .output() {
         Ok(out) => out.stdout.len() == 0,
         Err(_) => false
+    };
+}
+
+fn git_status(path: &str) -> String {
+    println!("{}", path);
+    return match process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .arg("status")
+        .output() {
+        Ok(out) => String::from_utf8(out.stdout).unwrap_or_default(),
+        Err(_) => String::from("")
     };
 }
 

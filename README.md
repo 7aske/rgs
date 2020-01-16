@@ -13,7 +13,7 @@ Unix based system
 ## Usage
 
 ```
-rgs <flags>
+rgs <flags> [path]
 ```
 By default `rgs` assumes that repositories are categorized in one of the following way in a root folder as show by the tree below.
 
