@@ -97,3 +97,27 @@ category6        repo3
 ```
 
 `-d` - outputs the absolute path to the repository. Useful for `dmenu` scripting.
+
+### Ignoring
+
+If `.codeignore` file is supplied in the root of `CODE` directory its read for folders to be ignored in the search.
+
+Example:
+
+```
+# .codeignore
+# comment
+
+target
+out
+build
+cmake-build-debug
+cmake-build-release
+dist
+venv
+__pycache__
+node_modules
+
+tmp
+var
+```

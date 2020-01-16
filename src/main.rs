@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
+use std::env::join_paths;
 
 struct Proj {
     name: String,
@@ -56,6 +57,7 @@ fn main() {
     let mut ptype = PrintType::ShortPrint;
     let mut dir_print = false;
 
+    let mut codeignore = Vec::new();
     let mut langs = Vec::new();
     let mut count = 0;
     let code = match env::var("CODE") {
@@ -65,6 +67,18 @@ fn main() {
             process::exit(1);
         }
     };
+
+
+    let contents = fs::read_to_string(Path::new(&code).join(".codeignore")).unwrap_or("".to_string());
+
+    for line in contents.split("\n") {
+        let line = String::from(line);
+        if !line.starts_with("#") {
+            codeignore.push(line);
+        }
+    }
+
+
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
@@ -82,7 +96,7 @@ fn main() {
     }
 
 
-    match list_dir(code.as_str(), 2, &mut count, &mut langs) {
+    match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore) {
         Ok(_) => {
             update_langs(&mut langs);
             langs.sort_by(|a, b| a.name.cmp(&b.name));
@@ -115,7 +129,7 @@ fn long_print(langs: &Vec<Lang>) {
 
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name, l.projs.len(), if l.not_ok > 0 { l.not_ok.to_string() } else { "".to_string() },  l.path);
+            println!("{:8} {:4} {:2} {}", l.name, l.projs.len(), if l.not_ok > 0 { l.not_ok.to_string() } else { "".to_string() }, l.path);
             for p in &l.projs {
                 if !p.is_ok {
                     summary += format!("{:16} {:16}\n", l.name, p.name).as_str();
@@ -239,7 +253,7 @@ fn is_git_repo(path: &Path) -> bool {
     };
 }
 
-fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) -> io::Result<()> {
+fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<String>) -> io::Result<()> {
     if depth == 0 {
         return Ok(());
     } else {
@@ -252,30 +266,32 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>) 
         if path.is_dir() {
             let nstr = path.file_name().unwrap().to_str().unwrap();
             let parstr = path.parent().unwrap().to_str().unwrap();
-            if is_git_repo(&path) {
-                *count += 1;
-                match langs.pop() {
-                    None => {
-                        let mut oddl = Lang::new(nstr, pstr);
-                        oddl.add_proj(Proj::new(nstr, pstr));
-                        langs.push(oddl);
-                    }
-                    Some(mut lang) => {
-                        if parstr.starts_with(&lang.path) {
-                            lang.add_proj(Proj::new(nstr, pstr));
-                            langs.push(lang);
-                        } else {
-                            langs.push(lang);
+            if !codeignore.contains(&nstr.to_string()) {
+                if is_git_repo(&path) {
+                    *count += 1;
+                    match langs.pop() {
+                        None => {
                             let mut oddl = Lang::new(nstr, pstr);
                             oddl.add_proj(Proj::new(nstr, pstr));
                             langs.push(oddl);
                         }
+                        Some(mut lang) => {
+                            if parstr.starts_with(&lang.path) {
+                                lang.add_proj(Proj::new(nstr, pstr));
+                                langs.push(lang);
+                            } else {
+                                langs.push(lang);
+                                let mut oddl = Lang::new(nstr, pstr);
+                                oddl.add_proj(Proj::new(nstr, pstr));
+                                langs.push(oddl);
+                            }
+                        }
                     }
-                }
-            } else {
-                if !nstr.starts_with(".") && !nstr.starts_with("_") {
-                    langs.push(Lang::new(nstr, pstr));
-                    list_dir(pstr, depth, count, langs)?;
+                } else {
+                    if !nstr.starts_with(".") && !nstr.starts_with("_") {
+                        langs.push(Lang::new(nstr, pstr));
+                        list_dir(pstr, depth, count, langs, codeignore)?;
+                    }
                 }
             }
         }
