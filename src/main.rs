@@ -7,7 +7,6 @@ use std::path::Path;
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::env::join_paths;
 
 struct Proj {
     name: String,
@@ -51,7 +50,6 @@ impl Lang {
         self.projs.push(proj)
     }
 }
-
 
 fn main() {
     let mut ptype = PrintType::ShortPrint;
@@ -104,7 +102,7 @@ fn main() {
         return;
     }
 
-    match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore) {
+    match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore, &code) {
         Ok(_) => {
             update_langs(&mut langs);
             langs.sort_by(|a, b| a.name.cmp(&b.name));
@@ -260,59 +258,44 @@ fn git_status(path: &str) -> String {
 
 fn is_git_repo(path: &Path) -> bool {
     let entries = fs::read_dir(path);
-    return match entries {
-        Ok(dir) => {
-            dir.into_iter().any(|x| {
-                match x {
-                    Ok(e) => e.file_name() == ".git" && e.path().is_dir(),
-                    Err(_) => false,
-                }
-            })
-        }
-        Err(_) => false
+    match entries {
+        Ok(dir) => return dir.into_iter().any(|x| match x {
+            Ok(e) => e.file_name() == ".git" && e.path().is_dir(),
+            Err(_) => false,
+        }),
+        Err(_) => return false
     };
 }
 
-fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<String>) -> io::Result<()> {
-    if depth == 0 {
-        return Ok(());
-    } else {
-        depth -= 1;
-    }
+fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<String>, code: &String) -> io::Result<()> {
+    if depth == 0 { return Ok(()); }
+    depth -= 1;
+
     for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let path = entry.path();
-        let pstr = path.to_str().unwrap();
+        let path = entry?.path();
+        let path_str = path.to_str().unwrap();
         if path.is_dir() {
-            let nstr = path.file_name().unwrap().to_str().unwrap();
-            let parstr = path.parent().unwrap().to_str().unwrap();
-            if !codeignore.contains(&nstr.to_string()) {
-                if is_git_repo(&path) {
-                    *count += 1;
-                    match langs.pop() {
-                        None => {
-                            let mut oddl = Lang::new(nstr, pstr);
-                            oddl.add_proj(Proj::new(nstr, pstr));
-                            langs.push(oddl);
-                        }
-                        Some(mut lang) => {
-                            if parstr.starts_with(&lang.path) {
-                                lang.add_proj(Proj::new(nstr, pstr));
-                                langs.push(lang);
-                            } else {
-                                langs.push(lang);
-                                let mut oddl = Lang::new(nstr, pstr);
-                                oddl.add_proj(Proj::new(nstr, pstr));
-                                langs.push(oddl);
-                            }
-                        }
-                    }
-                } else {
-                    if !nstr.starts_with(".") && !nstr.starts_with("_") {
-                        langs.push(Lang::new(nstr, pstr));
-                        list_dir(pstr, depth, count, langs, codeignore)?;
-                    }
+            let dir_name = path.file_name().unwrap().to_str().unwrap();
+            let par_name = path.parent().unwrap().to_str().unwrap();
+
+            if codeignore.contains(&dir_name.to_string()) { continue; }
+
+            if dir_name.starts_with(".") || dir_name.starts_with("_") { continue; }
+
+            if is_git_repo(&path) {
+                *count += 1;
+                let mut lang = langs.pop().unwrap_or(Lang::new(dir_name, path_str));
+                if !par_name.ends_with(&lang.name) {
+                    langs.push(lang);
+                    lang = Lang::new(dir_name, path_str);
                 }
+                lang.add_proj(Proj::new(dir_name, path_str));
+                langs.push(lang);
+            } else {
+                if code.as_str() ==  path.parent().unwrap().to_path_buf().to_str().unwrap() {
+                    langs.push(Lang::new(dir_name, path_str));
+                }
+                list_dir(path_str, depth, count, langs, codeignore, code)?;
             }
         }
     };
