@@ -25,7 +25,7 @@ enum OutputType {
 
 fn main() {
     let mut out_type = OutputType::Short;
-
+    let mut no_codeignore = false;
     let mut langs = Vec::new();
     let mut count = 0;
     let code = match env::var("CODE") {
@@ -44,23 +44,28 @@ fn main() {
             "-vv" => out_type = OutputType::VeryVerbose,
             "-d" => out_type = OutputType::Dir,
             "-a" => out_type = OutputType::All,
+            "-i" => no_codeignore = true,
             _ => {}
         }
     }
 
 
     let codeignore: Vec<Pattern>;
-    match File::open(Path::new(&code).join(".codeignore")) {
-        Ok(file) => {
-            codeignore = io::BufReader::new(file)
-                .lines()
-                .filter_map(|line| line.ok())
-                .filter(|line| !line.starts_with("#"))
-                .map(|line| Pattern::new(line.as_str()).unwrap())
-                .collect()
-        }
-        Err(_) => codeignore = vec![]
-    };
+    if !no_codeignore {
+        match File::open(Path::new(&code).join(".codeignore")) {
+            Ok(file) => {
+                codeignore = io::BufReader::new(file)
+                    .lines()
+                    .filter_map(|line| line.ok())
+                    .filter(|line| !line.starts_with("#"))
+                    .map(|line| Pattern::new(line.as_str()).unwrap())
+                    .collect()
+            }
+            Err(_) => codeignore = vec![]
+        };
+    } else {
+        codeignore = vec![]
+    }
 
     match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore, &code) {
         Ok(_) => {
