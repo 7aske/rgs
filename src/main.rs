@@ -1,4 +1,5 @@
-#![allow(unused_must_use)]
+mod git;
+mod lang;
 
 use std::{io, thread};
 use std::env;
@@ -7,130 +8,102 @@ use std::path::Path;
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
+use crate::git::{git_is_dirty, git_is_inside_work_tree};
+use crate::lang::{Lang, Proj};
+use std::io::BufRead;
+use glob::Pattern;
+use std::fs::File;
 
-struct Proj {
-    name: String,
-    path: String,
-    is_ok: bool,
-}
 
-struct Lang {
-    name: String,
-    path: String,
-    projs: Vec<Proj>,
-    not_ok: i32,
-}
-
-enum PrintType {
-    LongPrint,
-    LongLongPrint,
-    ShortPrint,
-}
-
-impl Proj {
-    fn new(name: &str, path: &str) -> Self {
-        Proj {
-            name: String::from(name),
-            path: String::from(path),
-            is_ok: true,
-        }
-    }
-}
-
-impl Lang {
-    fn new(name: &str, path: &str) -> Self {
-        Lang {
-            name: String::from(name),
-            path: String::from(path),
-            projs: vec![],
-            not_ok: 0,
-        }
-    }
-    fn add_proj(&mut self, proj: Proj) {
-        self.projs.push(proj)
-    }
+enum OutputType {
+    Verbose,
+    VeryVerbose,
+    Short,
+    All,
+    Dir,
 }
 
 fn main() {
-    let mut ptype = PrintType::ShortPrint;
-    let mut dir_print = false;
+    let mut out_type = OutputType::Short;
 
-    let mut codeignore = Vec::new();
     let mut langs = Vec::new();
     let mut count = 0;
-    let mut path = String::new();
     let code = match env::var("CODE") {
         Ok(val) => val,
         Err(_) => {
-            eprintln!("ERROR: Cannot find 'CODE' environmental variable");
+            eprintln!("rgs: 'CODE' env not set");
             process::exit(1);
         }
     };
 
-
-    let contents = fs::read_to_string(Path::new(&code).join(".codeignore")).unwrap_or("".to_string());
-
-    for line in contents.split("\n") {
-        let line = String::from(line);
-        if !line.starts_with("#") {
-            codeignore.push(line);
-        }
-    }
-
-
     let args: Vec<String> = env::args().collect();
 
-    match args.len() {
-        1 => {}
-        _ => {
-            for arg in args {
-                match arg.as_str() {
-                    "-l" => ptype = PrintType::LongPrint,
-                    "-ll" => ptype = PrintType::LongLongPrint,
-                    "-d" => dir_print = true,
-                    "." => path = String::from(&arg),
-                    _ => {}
-                }
-            }
+    for arg in args {
+        match arg.as_str() {
+            "-v" => out_type = OutputType::Verbose,
+            "-vv" => out_type = OutputType::VeryVerbose,
+            "-d" => out_type = OutputType::Dir,
+            "-a" => out_type = OutputType::All,
+            _ => {}
         }
     }
-    if path.as_str() != "" {
-        let cwd = env::current_dir().unwrap_or_default();
-        let path = String::from(cwd.join(Path::new(&path)).to_str().unwrap_or_default());
-        let res = git_status(&path);
-        print!("{}", res);
-        return;
-    }
+
+
+    let codeignore: Vec<Pattern>;
+    match File::open(Path::new(&code).join(".codeignore")) {
+        Ok(file) => {
+            codeignore = io::BufReader::new(file)
+                .lines()
+                .filter_map(|line| line.ok())
+                .filter(|line| !line.starts_with("#"))
+                .map(|line| Pattern::new(line.as_str()).unwrap())
+                .collect()
+        }
+        Err(_) => codeignore = vec![]
+    };
 
     match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore, &code) {
         Ok(_) => {
             update_langs(&mut langs);
             langs.sort_by(|a, b| a.name.cmp(&b.name));
-            match ptype {
-                PrintType::LongPrint => long_print(&langs),
-                PrintType::LongLongPrint => long_long_print(&langs),
-                _ => short_print(&langs, dir_print),
+            match out_type {
+                OutputType::Verbose => verbose_print(&langs),
+                OutputType::VeryVerbose => very_verbose_print(&langs),
+                OutputType::All => all_print(&langs),
+                OutputType::Dir => dir_print(&langs),
+                _ => default_print(&langs),
             }
         }
         Err(err) => { eprintln!("ERROR: {}", err.to_string()) }
     }
 }
 
-fn short_print(langs: &Vec<Lang>, dir_print: bool) {
+fn all_print(langs: &Vec<Lang>) {
     for l in langs {
         for p in &l.projs {
-            if !p.is_ok {
-                if dir_print {
-                    println!("{:32}", p.path);
-                } else {
-                    println!("{:16} {:16}", l.name, p.name);
-                }
-            }
+            println!("{:32}", p.path);
         }
     }
 }
 
-fn long_print(langs: &Vec<Lang>) {
+fn dir_print(langs: &Vec<Lang>) {
+    for l in langs {
+        for p in l.projs.iter().filter(|p| !p.is_ok) {
+            println!("{:32}", p.path);
+        }
+    }
+}
+
+fn default_print(langs: &Vec<Lang>) {
+    for l in langs {
+        for p in l.projs.iter().filter(|p| !p.is_ok) {
+            println!("{:16} {:16}", l.name, p.name)
+        }
+    }
+}
+
+
+fn verbose_print(langs: &Vec<Lang>) {
     let mut summary = String::from("\n");
 
     for l in langs {
@@ -146,7 +119,7 @@ fn long_print(langs: &Vec<Lang>) {
     print!("{}", summary);
 }
 
-fn long_long_print(langs: &Vec<Lang>) {
+fn very_verbose_print(langs: &Vec<Lang>) {
     for (i, l) in &mut langs.iter().enumerate() {
         if i == langs.len() - 1 {
             println!("└──{} ({})", l.name, l.projs.len());
@@ -194,7 +167,7 @@ fn update_projs(lang: &mut Lang) {
         let txp_local = mpsc::Sender::clone(&txp);
         let mut proj = lang.projs.pop().unwrap();
         let phandle = thread::spawn(move || {
-            proj.is_ok = git_is_ok(&proj.path);
+            proj.is_ok = git_is_dirty(&proj.path);
             txp_local.send(proj);
         });
         phandles.push(phandle);
@@ -232,58 +205,30 @@ fn update_langs(langs: &mut Vec<Lang>) {
     }
 }
 
-fn git_is_ok(path: &str) -> bool {
-    return match process::Command::new("git")
-        .arg("-C")
-        .arg(path)
-        .arg("status")
-        .arg("--porcelain")
-        .output() {
-        Ok(out) => out.stdout.len() == 0,
-        Err(_) => false
-    };
-}
 
-fn git_status(path: &str) -> String {
-    println!("{}", path);
-    return match process::Command::new("git")
-        .arg("-C")
-        .arg(path)
-        .arg("status")
-        .output() {
-        Ok(out) => String::from_utf8(out.stdout).unwrap_or_default(),
-        Err(_) => String::from("")
-    };
-}
-
-fn is_git_repo(path: &Path) -> bool {
-    let entries = fs::read_dir(path);
-    match entries {
-        Ok(dir) => return dir.into_iter().any(|x| match x {
-            Ok(e) => e.file_name() == ".git" && e.path().is_dir(),
-            Err(_) => false,
-        }),
-        Err(_) => return false
-    };
-}
-
-fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<String>, code: &String) -> io::Result<()> {
+fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<Pattern>, code: &String) -> io::Result<()> {
     if depth == 0 { return Ok(()); }
     depth -= 1;
 
     for entry in fs::read_dir(path)? {
         let path = entry?.path();
         let path_str = path.to_str().unwrap();
+        let replaced = path_str.replace(code, "");
+        let path_root = replaced.as_str();
+
+        if codeignore.iter().any(|g| g.matches(path_root)) {
+            continue;
+        }
+
         if path.is_dir() {
             let dir_name = path.file_name().unwrap().to_str().unwrap();
             let par_name = path.parent().unwrap().to_str().unwrap();
 
-            if codeignore.contains(&dir_name.to_string()) { continue; }
 
-            if dir_name.starts_with(".") || dir_name.starts_with("_") { continue; }
-
-            if is_git_repo(&path) {
+            if git_is_inside_work_tree(&path_str) {
                 *count += 1;
+
+                // last or new
                 let mut lang = langs.pop().unwrap_or(Lang::new(dir_name, path_str));
                 if !par_name.ends_with(&lang.name) {
                     langs.push(lang);
@@ -292,7 +237,8 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
                 lang.add_proj(Proj::new(dir_name, path_str));
                 langs.push(lang);
             } else {
-                if code.as_str() ==  path.parent().unwrap().to_path_buf().to_str().unwrap() {
+                // if its a top-level repository (eg. uni)
+                if code.as_str() == path.parent().unwrap().to_path_buf().to_str().unwrap() {
                     langs.push(Lang::new(dir_name, path_str));
                 }
                 list_dir(path_str, depth, count, langs, codeignore, code)?;
