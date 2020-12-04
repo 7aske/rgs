@@ -81,7 +81,7 @@ fn main() {
 fn all_print(langs: &Vec<Lang>) {
     for l in langs {
         for p in &l.projs {
-            println!("{:32}", p.path);
+            println!("{}", p.path);
         }
     }
 }
@@ -89,7 +89,7 @@ fn all_print(langs: &Vec<Lang>) {
 fn dir_print(langs: &Vec<Lang>) {
     for l in langs {
         for p in l.projs.iter().filter(|p| !p.is_ok) {
-            println!("{:32}", p.path);
+            println!("{}", p.path);
         }
     }
 }
