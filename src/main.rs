@@ -15,6 +15,7 @@ use std::io::BufRead;
 use glob::Pattern;
 use std::fs::File;
 use getopts::Options;
+use colored::*;
 
 
 #[derive(Eq, PartialEq)]
@@ -50,7 +51,6 @@ fn main() {
             process::exit(1);
         }
     };
-
 
     let mut opts = Options::new();
     opts.optflag("h", "help", "show help");
@@ -120,7 +120,7 @@ fn main() {
 }
 
 fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| println!("{:16} {:16}", l.name, p.name));
+    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| println!("{:16} {:16}", l.name.magenta(), p.name.yellow()));
     let mut filter: Box<fn(&&Proj) -> bool> = Box::new(|p: &&Proj| !p.is_ok);
     for out_type in out_types {
         match out_type {
@@ -146,10 +146,10 @@ fn verbose_print(langs: &Vec<Lang>) {
 
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name, l.projs.len(), if l.not_ok > 0 { l.not_ok.to_string() } else { "".to_string() }, l.path);
+            println!("{:8} {:4} {:2} {}", l.name.magenta(), l.projs.len().to_string().green(), if l.not_ok > 0 { l.not_ok.to_string().red().bold() } else { "".to_string().white() }, l.path.yellow());
             for p in &l.projs {
                 if !p.is_ok {
-                    summary += format!("{:16} {:16}\n", l.name, p.name).as_str();
+                    summary += format!("{:16} {:16}\n", l.name.magenta(), p.name.yellow()).as_str();
                 }
             }
         }
@@ -160,38 +160,29 @@ fn verbose_print(langs: &Vec<Lang>) {
 fn very_verbose_print(langs: &Vec<Lang>) {
     for (i, l) in &mut langs.iter().enumerate() {
         if i == langs.len() - 1 {
-            println!("└──{} ({})", l.name, l.projs.len());
+            println!("└──{} {}", l.name.magenta(), format!("({})", l.projs.len()).black());
         } else {
-            println!("├──{} ({})", l.name, l.projs.len());
+            println!("├──{} {}", l.name.magenta(), format!("({})", l.projs.len()).black());
         }
         for (j, p) in &mut l.projs.iter().enumerate() {
+            let mut out = String::from("");
+
             if i == langs.len() - 1 {
-                if j == l.projs.len() - 1 {
-                    if p.is_ok {
-                        println!("   └──{}", p.name);
-                    } else {
-                        println!("   └──{}  *", p.name);
-                    }
-                } else if p.is_ok {
-                    println!("   ├──{}", p.name);
-                } else {
-                    println!("   ├──{}  *", p.name);
-                }
+                out += "   "
             } else {
-                if j == l.projs.len() - 1 {
-                    if p.is_ok {
-                        println!("│  └──{}", p.name);
-                    } else {
-                        println!("│  └──{}  *", p.name);
-                    }
-                } else {
-                    if p.is_ok {
-                        println!("│  ├──{}", p.name);
-                    } else {
-                        println!("│  ├──{}  *", p.name);
-                    }
-                }
+                out += "|  "
             }
+            if j == l.projs.len() - 1 {
+                out += "└──"
+            } else {
+                out += "├──"
+            }
+            if p.is_ok {
+                out += format!("{}", p.name.green()).as_str();
+            } else {
+                out += format!("{}  *", p.name.red().bold()).as_str();
+            }
+            println!("{}", out);
         }
     }
 }
