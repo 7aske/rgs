@@ -1,3 +1,4 @@
+
 use std::{process};
 use std::process::Stdio;
 
@@ -11,6 +12,7 @@ pub fn git_is_dirty(path: &str) -> bool {
     };
 }
 
+#[allow(dead_code)]
 pub fn git_status(path: &str) -> String {
     return match process::Command::new("git")
         .args(&["-C", path, "status"])

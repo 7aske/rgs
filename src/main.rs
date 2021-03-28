@@ -1,3 +1,4 @@
+#![allow(unused_must_use)]
 mod git;
 mod lang;
 
@@ -13,41 +14,76 @@ use crate::lang::{Lang, Proj};
 use std::io::BufRead;
 use glob::Pattern;
 use std::fs::File;
+use getopts::Options;
 
 
+#[derive(Eq, PartialEq)]
 enum OutputType {
-    Verbose,
-    VeryVerbose,
-    Short,
     All,
     Dir,
 }
 
+#[derive(Eq, PartialEq)]
+enum SummaryType {
+    Default,
+    Verbose,
+    VeryVerbose,
+}
+
 fn main() {
-    let mut out_type = OutputType::Short;
-    let mut no_codeignore = false;
+    let mut out_types: Vec<OutputType> = vec![];
     let mut langs = Vec::new();
     let mut count = 0;
+
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+    let program = Path::new(program.as_str())
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap();
+
     let code = match env::var("CODE") {
         Ok(val) => val,
         Err(_) => {
-            eprintln!("rgs: 'CODE' env not set");
+            eprintln!("{}: 'CODE' env not set", program);
             process::exit(1);
         }
     };
 
-    let args: Vec<String> = env::args().collect();
 
-    for arg in args {
-        match arg.as_str() {
-            "-v" => out_type = OutputType::Verbose,
-            "-vv" => out_type = OutputType::VeryVerbose,
-            "-d" => out_type = OutputType::Dir,
-            "-a" => out_type = OutputType::All,
-            "-i" => no_codeignore = true,
-            _ => {}
-        }
+    let mut opts = Options::new();
+    opts.optflag("h", "help", "show help");
+    opts.optflagmulti("v", "verbose", "verbose");
+    opts.optflag("a", "all", "show all repositories");
+    opts.optflag("d", "dir", "show all repository directories");
+    opts.optflag("i", "no-ignore", "doesn't read .codeignore file");
+    opts.optopt("D", "depth", "project search recursive depth", "DEPTH");
+
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => m,
+        Err(f) => panic!(f.to_string())
+    };
+
+    let verbose = matches.opt_count("verbose");
+    let summary_type = match verbose {
+        1 =>  SummaryType::Verbose,
+        2 =>  SummaryType::VeryVerbose,
+        _ =>  SummaryType::Default,
+    };
+
+    if matches.opt_present("all") {
+        out_types.push(OutputType::All)
     }
+
+    if matches.opt_present("dir") {
+        out_types.push(OutputType::Dir);
+    }
+
+    let no_codeignore = matches.opt_present("no-ignore");
+
+    let depth = matches.opt_str("depth").unwrap_or(String::from("2"));
+    let depth = depth.parse::<i32>().unwrap_or(2);
 
 
     let codeignore: Vec<Pattern>;
@@ -67,42 +103,39 @@ fn main() {
         codeignore = vec![]
     }
 
-    match list_dir(code.as_str(), 2, &mut count, &mut langs, &codeignore, &code) {
+    match list_dir(code.as_str(), depth, &mut count, &mut langs, &codeignore, &code) {
         Ok(_) => {
             update_langs(&mut langs);
             langs.sort_by(|a, b| a.name.cmp(&b.name));
-            match out_type {
-                OutputType::Verbose => verbose_print(&langs),
-                OutputType::VeryVerbose => very_verbose_print(&langs),
-                OutputType::All => all_print(&langs),
-                OutputType::Dir => dir_print(&langs),
-                _ => default_print(&langs),
+
+            match summary_type {
+                SummaryType::VeryVerbose => very_verbose_print(&langs),
+                SummaryType::Verbose => verbose_print(&langs),
+                _ => default_print(&langs, &out_types),
             }
         }
-        Err(err) => { eprintln!("ERROR: {}", err.to_string()) }
+
+        Err(err) => { eprintln!("{}: error: {}", program, err.to_string()) }
     }
 }
 
-fn all_print(langs: &Vec<Lang>) {
-    for l in langs {
-        for p in &l.projs {
-            println!("{}", p.path);
+fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
+    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| println!("{:16} {:16}", l.name, p.name));
+    let mut filter: Box<fn(&&Proj) -> bool> = Box::new(|p: &&Proj| !p.is_ok);
+    for out_type in out_types {
+        match out_type {
+            OutputType::All => {
+                filter = Box::new(|_p: &&Proj| true);
+            }
+            OutputType::Dir => {
+                print = Box::new(|_l: &Lang, p: &Proj| println!("{}", p.path));
+            }
         }
     }
-}
 
-fn dir_print(langs: &Vec<Lang>) {
     for l in langs {
-        for p in l.projs.iter().filter(|p| !p.is_ok) {
-            println!("{}", p.path);
-        }
-    }
-}
-
-fn default_print(langs: &Vec<Lang>) {
-    for l in langs {
-        for p in l.projs.iter().filter(|p| !p.is_ok) {
-            println!("{:16} {:16}", l.name, p.name)
+        for p in l.projs.iter().filter(filter.as_ref()) {
+            print(l, p);
         }
     }
 }
