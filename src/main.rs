@@ -62,7 +62,7 @@ fn main() {
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
-        Err(f) => panic!(f.to_string())
+        Err(f) => panic!("{}", f.to_string())
     };
 
     let verbose = matches.opt_count("verbose");
@@ -259,15 +259,17 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
 
                 // last or new
                 let mut lang = langs.pop().unwrap_or(Lang::new(dir_name, path_str));
-                if !par_name.ends_with(&lang.name) {
+
+                // if its a top-level repository (eg. uni)
+                if code.as_str() == par_name {
                     langs.push(lang);
                     lang = Lang::new(dir_name, path_str);
                 }
+
                 lang.add_proj(Proj::new(dir_name, path_str));
                 langs.push(lang);
             } else {
-                // if its a top-level repository (eg. uni)
-                if code.as_str() == path.parent().unwrap().to_path_buf().to_str().unwrap() {
+                if code.as_str() == par_name {
                     langs.push(Lang::new(dir_name, path_str));
                 }
                 list_dir(path_str, depth, count, langs, codeignore, code)?;
