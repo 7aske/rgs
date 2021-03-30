@@ -5,7 +5,7 @@ mod lang;
 use std::{io, thread};
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, MAIN_SEPARATOR};
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -264,6 +264,16 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
                 if code.as_str() == par_name {
                     langs.push(lang);
                     lang = Lang::new(dir_name, path_str);
+                } else {
+                    let code = Path::new(code);
+                    let root = code.join(Path::new(&lang.name));
+                    let root = root.to_str().unwrap();
+                    if root != par_name {
+                        let code_len =code.to_str().unwrap().len() + 1;
+                        let lang_name = &par_name[code_len..];
+                        langs.push(lang);
+                        lang = Lang::new(&lang_name, path_str);
+                    }
                 }
 
                 lang.add_proj(Proj::new(dir_name, path_str));
