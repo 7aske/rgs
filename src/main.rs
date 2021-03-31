@@ -1,4 +1,5 @@
 #![allow(unused_must_use)]
+
 mod git;
 mod lang;
 
@@ -30,6 +31,10 @@ enum SummaryType {
     Verbose,
     VeryVerbose,
 }
+
+const DIRTY_COLOR: &str = "yellow";
+const OK_COLOR: &str = "green";
+const FG_COLOR: &str = "blue";
 
 fn usage(program: &str, opts: &Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -75,9 +80,9 @@ fn main() {
 
     let verbose = matches.opt_count("verbose");
     let summary_type = match verbose {
-        1 =>  SummaryType::Verbose,
-        2 =>  SummaryType::VeryVerbose,
-        _ =>  SummaryType::Default,
+        1 => SummaryType::Verbose,
+        2 => SummaryType::VeryVerbose,
+        _ => SummaryType::Default,
     };
 
     if matches.opt_present("code") {
@@ -143,7 +148,14 @@ fn main() {
 }
 
 fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| println!("{:16} {:16}", l.name.magenta(), p.name.yellow()));
+    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| {
+        let color = match p.is_ok {
+            true => "green",
+            false => "yellow"
+        };
+        println!("{:16} {:16}", l.name.color(FG_COLOR), p.name.color(color))
+    });
+
     let mut filter: Box<fn(&&Proj) -> bool> = Box::new(|p: &&Proj| !p.is_ok);
     for out_type in out_types {
         match out_type {
@@ -169,10 +181,10 @@ fn verbose_print(langs: &Vec<Lang>) {
 
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name.magenta(), l.projs.len().to_string().green(), if l.not_ok > 0 { l.not_ok.to_string().red().bold() } else { "".to_string().white() }, l.path.yellow());
+            println!("{:8} {:4} {:2} {}", l.name.color(FG_COLOR), l.projs.len().to_string().color(OK_COLOR), if l.not_ok > 0 { l.not_ok.to_string().color(DIRTY_COLOR).bold() } else { "".to_string().white() }, l.path.color("white"));
             for p in &l.projs {
                 if !p.is_ok {
-                    summary += format!("{:16} {:16}\n", l.name.magenta(), p.name.yellow()).as_str();
+                    summary += format!("{:16} {:16}\n", l.name.color(FG_COLOR), p.name.color(DIRTY_COLOR)).as_str();
                 }
             }
         }
@@ -183,9 +195,9 @@ fn verbose_print(langs: &Vec<Lang>) {
 fn very_verbose_print(langs: &Vec<Lang>) {
     for (i, l) in &mut langs.iter().enumerate() {
         if i == langs.len() - 1 {
-            println!("└──{} {}", l.name.magenta(), format!("({})", l.projs.len()).black());
+            println!("└──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
         } else {
-            println!("├──{} {}", l.name.magenta(), format!("({})", l.projs.len()).black());
+            println!("├──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
         }
         for (j, p) in &mut l.projs.iter().enumerate() {
             let mut out = String::from("");
@@ -201,9 +213,9 @@ fn very_verbose_print(langs: &Vec<Lang>) {
                 out += "├──"
             }
             if p.is_ok {
-                out += format!("{}", p.name.green()).as_str();
+                out += format!("{}", p.name.color(OK_COLOR)).as_str();
             } else {
-                out += format!("{}  *", p.name.red().bold()).as_str();
+                out += format!("{}  *", p.name.color(DIRTY_COLOR).bold()).as_str();
             }
             println!("{}", out);
         }
@@ -292,7 +304,7 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
                     let root = code.join(Path::new(&lang.name));
                     let root = root.to_str().unwrap();
                     if root != par_name {
-                        let code_len =code.to_str().unwrap().len() + 1;
+                        let code_len = code.to_str().unwrap().len() + 1;
                         let lang_name = &par_name[code_len..];
                         langs.push(lang);
                         lang = Lang::new(&lang_name, path_str);
