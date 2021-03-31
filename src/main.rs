@@ -5,7 +5,7 @@ mod lang;
 use std::{io, thread};
 use std::env;
 use std::fs;
-use std::path::{Path, MAIN_SEPARATOR};
+use std::path::Path;
 use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -31,6 +31,12 @@ enum SummaryType {
     VeryVerbose,
 }
 
+fn usage(program: &str, opts: &Options) {
+    let brief = format!("Usage: {} [options]", program);
+    print!("{}", opts.usage(&brief));
+    process::exit(0);
+}
+
 fn main() {
     let mut out_types: Vec<OutputType> = vec![];
     let mut langs = Vec::new();
@@ -44,7 +50,7 @@ fn main() {
         .to_str()
         .unwrap();
 
-    let code = match env::var("CODE") {
+    let mut code = match env::var("CODE") {
         Ok(val) => val,
         Err(_) => {
             eprintln!("{}: 'CODE' env not set", program);
@@ -53,12 +59,14 @@ fn main() {
     };
 
     let mut opts = Options::new();
-    opts.optflag("h", "help", "show help");
+    opts.optflag("h", "help", "show this message and exit");
     opts.optflagmulti("v", "verbose", "verbose");
     opts.optflag("a", "all", "show all repositories");
     opts.optflag("d", "dir", "show all repository directories");
     opts.optflag("i", "no-ignore", "doesn't read .codeignore file");
-    opts.optopt("D", "depth", "project search recursive depth", "DEPTH");
+    opts.optopt("D", "depth", "project search recursive depth", "NUM");
+    opts.optopt("c", "code", "set CODE variable", "PATH");
+    opts.optflag("C", "print-code", "print CODE variable and exit");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -71,6 +79,21 @@ fn main() {
         2 =>  SummaryType::VeryVerbose,
         _ =>  SummaryType::Default,
     };
+
+    if matches.opt_present("code") {
+        code = matches.opt_get("code")
+            .unwrap()
+            .unwrap_or(code);
+    }
+
+    if matches.opt_present("print-code") {
+        println!("{}", code);
+        process::exit(0);
+    }
+
+    if matches.opt_present("help") {
+        usage(program, &opts);
+    }
 
     if matches.opt_present("all") {
         out_types.push(OutputType::All)
