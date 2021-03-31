@@ -1,19 +1,19 @@
-pub struct Proj {
+pub struct Project {
     pub name: String,
     pub path: String,
     pub is_ok: bool,
 }
 
-pub struct Lang {
+pub struct Group {
     pub name: String,
     pub path: String,
-    pub projs: Vec<Proj>,
+    pub projs: Vec<Project>,
     pub not_ok: i32,
 }
 
-impl Proj {
+impl Project {
     pub fn new(name: &str, path: &str) -> Self {
-        Proj {
+        Project {
             name: String::from(name),
             path: String::from(path),
             is_ok: true,
@@ -21,16 +21,16 @@ impl Proj {
     }
 }
 
-impl Lang {
+impl Group {
     pub fn new(name: &str, path: &str) -> Self {
-        Lang {
+        Group {
             name: String::from(name),
             path: String::from(path),
             projs: vec![],
             not_ok: 0,
         }
     }
-    pub fn add_proj(&mut self, proj: Proj) {
+    pub fn add_project(&mut self, proj: Project) {
         self.projs.push(proj)
     }
 }

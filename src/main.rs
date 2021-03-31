@@ -11,7 +11,7 @@ use std::process;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use crate::git::{git_is_dirty, git_is_inside_work_tree};
-use crate::lang::{Lang, Proj};
+use crate::lang::{Group, Project};
 use std::io::BufRead;
 use glob::Pattern;
 use std::fs::File;
@@ -147,8 +147,8 @@ fn main() {
     }
 }
 
-fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Lang, &Proj)> = Box::new(|l: &Lang, p: &Proj| {
+fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
+    let mut print: Box<fn(&Group, &Project)> = Box::new(|l: &Group, p: &Project| {
         let color = match p.is_ok {
             true => "green",
             false => "yellow"
@@ -156,14 +156,14 @@ fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
         println!("{:16} {:16}", l.name.color(FG_COLOR), p.name.color(color))
     });
 
-    let mut filter: Box<fn(&&Proj) -> bool> = Box::new(|p: &&Proj| !p.is_ok);
+    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| !p.is_ok);
     for out_type in out_types {
         match out_type {
             OutputType::All => {
-                filter = Box::new(|_p: &&Proj| true);
+                filter = Box::new(|_p: &&Project| true);
             }
             OutputType::Dir => {
-                print = Box::new(|_l: &Lang, p: &Proj| println!("{}", p.path));
+                print = Box::new(|_l: &Group, p: &Project| println!("{}", p.path));
             }
         }
     }
@@ -176,7 +176,7 @@ fn default_print(langs: &Vec<Lang>, out_types: &Vec<OutputType>) {
 }
 
 
-fn verbose_print(langs: &Vec<Lang>) {
+fn verbose_print(langs: &Vec<Group>) {
     let mut summary = String::from("\n");
 
     for l in langs {
@@ -192,7 +192,7 @@ fn verbose_print(langs: &Vec<Lang>) {
     print!("{}", summary);
 }
 
-fn very_verbose_print(langs: &Vec<Lang>) {
+fn very_verbose_print(langs: &Vec<Group>) {
     for (i, l) in &mut langs.iter().enumerate() {
         if i == langs.len() - 1 {
             println!("└──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
@@ -223,7 +223,7 @@ fn very_verbose_print(langs: &Vec<Lang>) {
 }
 
 
-fn update_projs(lang: &mut Lang) {
+fn update_projs(lang: &mut Group) {
     let (txp, rxp) = mpsc::channel();
     let mut phandles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -248,7 +248,7 @@ fn update_projs(lang: &mut Lang) {
     }
 }
 
-fn update_langs(langs: &mut Vec<Lang>) {
+fn update_langs(langs: &mut Vec<Group>) {
     let (tx, rx) = mpsc::channel();
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     while !langs.is_empty() {
@@ -270,7 +270,7 @@ fn update_langs(langs: &mut Vec<Lang>) {
 }
 
 
-fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, codeignore: &Vec<Pattern>, code: &String) -> io::Result<()> {
+fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Group>, codeignore: &Vec<Pattern>, code: &String) -> io::Result<()> {
     if depth == 0 { return Ok(()); }
     depth -= 1;
 
@@ -293,12 +293,12 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
                 *count += 1;
 
                 // last or new
-                let mut lang = langs.pop().unwrap_or(Lang::new(dir_name, path_str));
+                let mut lang = langs.pop().unwrap_or(Group::new(dir_name, path_str));
 
                 // if its a top-level repository (eg. uni)
                 if code.as_str() == par_name {
                     langs.push(lang);
-                    lang = Lang::new(dir_name, path_str);
+                    lang = Group::new(dir_name, path_str);
                 } else {
                     let code = Path::new(code);
                     let root = code.join(Path::new(&lang.name));
@@ -307,15 +307,15 @@ fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Lang>, 
                         let code_len = code.to_str().unwrap().len() + 1;
                         let lang_name = &par_name[code_len..];
                         langs.push(lang);
-                        lang = Lang::new(&lang_name, path_str);
+                        lang = Group::new(&lang_name, path_str);
                     }
                 }
 
-                lang.add_proj(Proj::new(dir_name, path_str));
+                lang.add_project(Project::new(dir_name, path_str));
                 langs.push(lang);
             } else {
                 if code.as_str() == par_name {
-                    langs.push(Lang::new(dir_name, path_str));
+                    langs.push(Group::new(dir_name, path_str));
                 }
                 list_dir(path_str, depth, count, langs, codeignore, code)?;
             }
