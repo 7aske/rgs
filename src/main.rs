@@ -2,39 +2,16 @@
 
 mod git;
 mod lang;
+mod rgs;
+mod print;
 
-use std::{io, thread};
 use std::env;
-use std::fs;
 use std::path::Path;
 use std::process;
-use std::sync::mpsc;
-use std::thread::JoinHandle;
-use crate::git::{git_is_dirty, git_is_inside_work_tree};
-use crate::lang::{Group, Project};
-use std::io::BufRead;
-use glob::Pattern;
-use std::fs::File;
+use crate::rgs::Rgs;
 use getopts::Options;
-use colored::*;
+use crate::print::{SummaryType, OutputType};
 
-
-#[derive(Eq, PartialEq)]
-enum OutputType {
-    All,
-    Dir,
-}
-
-#[derive(Eq, PartialEq)]
-enum SummaryType {
-    Default,
-    Verbose,
-    VeryVerbose,
-}
-
-const DIRTY_COLOR: &str = "yellow";
-const OK_COLOR: &str = "green";
-const FG_COLOR: &str = "blue";
 
 fn usage(program: &str, opts: &Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -44,8 +21,6 @@ fn usage(program: &str, opts: &Options) {
 
 fn main() {
     let mut out_types: Vec<OutputType> = vec![];
-    let mut langs = Vec::new();
-    let mut count = 0;
 
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
@@ -72,6 +47,7 @@ fn main() {
     opts.optopt("D", "depth", "project search recursive depth", "NUM");
     opts.optopt("c", "code", "set CODE variable", "PATH");
     opts.optflag("C", "print-code", "print CODE variable and exit");
+    opts.optflag("f", "fetch", "also fetch from origin");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -109,218 +85,13 @@ fn main() {
     }
 
     let no_codeignore = matches.opt_present("no-ignore");
+    let fetch = matches.opt_present("fetch");
 
     let depth = matches.opt_str("depth").unwrap_or(String::from("2"));
     let depth = depth.parse::<i32>().unwrap_or(2);
 
-
-    let codeignore: Vec<Pattern>;
-    if !no_codeignore {
-        match File::open(Path::new(&code).join(".codeignore")) {
-            Ok(file) => {
-                codeignore = io::BufReader::new(file)
-                    .lines()
-                    .filter_map(|line| line.ok())
-                    .filter(|line| !line.starts_with("#"))
-                    .map(|line| Pattern::new(line.as_str()).unwrap())
-                    .collect()
-            }
-            Err(_) => codeignore = vec![]
-        };
-    } else {
-        codeignore = vec![]
-    }
-
-    match list_dir(code.as_str(), depth, &mut count, &mut langs, &codeignore, &code) {
-        Ok(_) => {
-            update_langs(&mut langs);
-            langs.sort_by(|a, b| a.name.cmp(&b.name));
-
-            match summary_type {
-                SummaryType::VeryVerbose => very_verbose_print(&langs),
-                SummaryType::Verbose => verbose_print(&langs),
-                _ => default_print(&langs, &out_types),
-            }
-        }
-
-        Err(err) => { eprintln!("{}: error: {}", program, err.to_string()) }
-    }
+    let mut rgs = Rgs::new(code, no_codeignore, fetch, out_types, summary_type, depth);
+    rgs.run();
 }
 
-fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Group, &Project)> = Box::new(|l: &Group, p: &Project| {
-        let color = match p.is_ok {
-            true => "green",
-            false => "yellow"
-        };
-        println!("{:16} {:16}", l.name.color(FG_COLOR), p.name.color(color))
-    });
-
-    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| !p.is_ok);
-    for out_type in out_types {
-        match out_type {
-            OutputType::All => {
-                filter = Box::new(|_p: &&Project| true);
-            }
-            OutputType::Dir => {
-                print = Box::new(|_l: &Group, p: &Project| println!("{}", p.path));
-            }
-        }
-    }
-
-    for l in langs {
-        for p in l.projs.iter().filter(filter.as_ref()) {
-            print(l, p);
-        }
-    }
-}
-
-
-fn verbose_print(langs: &Vec<Group>) {
-    let mut summary = String::from("\n");
-
-    for l in langs {
-        if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name.color(FG_COLOR), l.projs.len().to_string().color(OK_COLOR), if l.not_ok > 0 { l.not_ok.to_string().color(DIRTY_COLOR).bold() } else { "".to_string().white() }, l.path.color("white"));
-            for p in &l.projs {
-                if !p.is_ok {
-                    summary += format!("{:16} {:16}\n", l.name.color(FG_COLOR), p.name.color(DIRTY_COLOR)).as_str();
-                }
-            }
-        }
-    }
-    print!("{}", summary);
-}
-
-fn very_verbose_print(langs: &Vec<Group>) {
-    for (i, l) in &mut langs.iter().enumerate() {
-        if i == langs.len() - 1 {
-            println!("└──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
-        } else {
-            println!("├──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
-        }
-        for (j, p) in &mut l.projs.iter().enumerate() {
-            let mut out = String::from("");
-
-            if i == langs.len() - 1 {
-                out += "   "
-            } else {
-                out += "|  "
-            }
-            if j == l.projs.len() - 1 {
-                out += "└──"
-            } else {
-                out += "├──"
-            }
-            if p.is_ok {
-                out += format!("{}", p.name.color(OK_COLOR)).as_str();
-            } else {
-                out += format!("{}  *", p.name.color(DIRTY_COLOR).bold()).as_str();
-            }
-            println!("{}", out);
-        }
-    }
-}
-
-
-fn update_projs(lang: &mut Group) {
-    let (txp, rxp) = mpsc::channel();
-    let mut phandles: Vec<JoinHandle<()>> = Vec::new();
-
-    while !lang.projs.is_empty() {
-        let txp_local = mpsc::Sender::clone(&txp);
-        let mut proj = lang.projs.pop().unwrap();
-        let phandle = thread::spawn(move || {
-            proj.is_ok = git_is_dirty(&proj.path);
-            txp_local.send(proj);
-        });
-        phandles.push(phandle);
-    }
-    for phandle in phandles {
-        phandle.join();
-    }
-    drop(txp);
-    for proj in rxp {
-        if !proj.is_ok {
-            lang.not_ok += 1;
-        }
-        lang.projs.push(proj);
-    }
-}
-
-fn update_langs(langs: &mut Vec<Group>) {
-    let (tx, rx) = mpsc::channel();
-    let mut handles: Vec<JoinHandle<()>> = Vec::new();
-    while !langs.is_empty() {
-        let tx_local = mpsc::Sender::clone(&tx);
-        let mut l = langs.pop().unwrap();
-        let handle = thread::spawn(move || {
-            update_projs(&mut l);
-            tx_local.send(l).unwrap();
-        });
-        handles.push(handle);
-    }
-    for handle in handles {
-        let _ = handle.join();
-    }
-    drop(tx);
-    for lang in rx {
-        langs.push(lang);
-    }
-}
-
-
-fn list_dir(path: &str, mut depth: i32, count: &mut i32, langs: &mut Vec<Group>, codeignore: &Vec<Pattern>, code: &String) -> io::Result<()> {
-    if depth == 0 { return Ok(()); }
-    depth -= 1;
-
-    for entry in fs::read_dir(path)? {
-        let path = entry?.path();
-        let path_str = path.to_str().unwrap();
-        let replaced = path_str.replace(code, "");
-        let path_root = replaced.as_str();
-
-        if codeignore.iter().any(|g| g.matches(path_root)) {
-            continue;
-        }
-
-        if path.is_dir() {
-            let dir_name = path.file_name().unwrap().to_str().unwrap();
-            let par_name = path.parent().unwrap().to_str().unwrap();
-
-
-            if git_is_inside_work_tree(&path_str) {
-                *count += 1;
-
-                // last or new
-                let mut lang = langs.pop().unwrap_or(Group::new(dir_name, path_str));
-
-                // if its a top-level repository (eg. uni)
-                if code.as_str() == par_name {
-                    langs.push(lang);
-                    lang = Group::new(dir_name, path_str);
-                } else {
-                    let code = Path::new(code);
-                    let root = code.join(Path::new(&lang.name));
-                    let root = root.to_str().unwrap();
-                    if root != par_name {
-                        let code_len = code.to_str().unwrap().len() + 1;
-                        let lang_name = &par_name[code_len..];
-                        langs.push(lang);
-                        lang = Group::new(&lang_name, path_str);
-                    }
-                }
-
-                lang.add_project(Project::new(dir_name, path_str));
-                langs.push(lang);
-            } else {
-                if code.as_str() == par_name {
-                    langs.push(Group::new(dir_name, path_str));
-                }
-                list_dir(path_str, depth, count, langs, codeignore, code)?;
-            }
-        }
-    };
-    Ok(())
-}
 
