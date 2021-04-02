@@ -75,7 +75,10 @@ fn main() {
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
-        Err(f) => panic!("{}", f.to_string())
+        Err(f) => {
+            eprintln!("{}: {}", program, f.to_string());
+            process::exit(2);
+        }
     };
 
     let verbose = matches.opt_count("verbose");
