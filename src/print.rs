@@ -50,7 +50,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
 
     for l in langs {
         for p in l.projs.iter().filter(filter.as_ref()) {
-            print(&l, p);
+            print(l, p);
         }
     }
 }

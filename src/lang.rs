@@ -1,9 +1,11 @@
+#[derive(Clone)]
 pub struct Project {
     pub name: String,
     pub path: String,
     pub is_ok: bool,
 }
 
+#[derive(Clone)]
 pub struct Group {
     pub name: String,
     pub path: String,
@@ -20,6 +22,7 @@ impl Project {
         }
     }
 }
+
 
 impl Group {
     pub fn new(name: &str, path: &str) -> Self {
