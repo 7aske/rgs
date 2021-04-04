@@ -11,7 +11,8 @@ use std::process;
 use crate::rgs::Rgs;
 use getopts::Options;
 use crate::print::{SummaryType, OutputType};
-
+use std::time::Instant;
+use colored::*;
 
 fn usage(program: &str, opts: &Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -20,6 +21,7 @@ fn usage(program: &str, opts: &Options) {
 }
 
 fn main() {
+    let now = Instant::now();
     let mut out_types: Vec<OutputType> = vec![];
 
     let args: Vec<String> = env::args().collect();
@@ -48,6 +50,7 @@ fn main() {
     opts.optopt("c", "code", "set CODE variable", "PATH");
     opts.optflag("C", "print-code", "print CODE variable and exit");
     opts.optflag("f", "fetch", "also fetch from origin");
+    opts.optflag("t", "time", "show time elapsed per project");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -84,6 +87,10 @@ fn main() {
         out_types.push(OutputType::Dir);
     }
 
+    if matches.opt_present("time") {
+        out_types.push(OutputType::Time);
+    }
+
     let no_codeignore = matches.opt_present("no-ignore");
     let fetch = matches.opt_present("fetch");
 
@@ -92,6 +99,10 @@ fn main() {
 
     let mut rgs = Rgs::new(code, no_codeignore, fetch, out_types, summary_type, depth);
     rgs.run();
+    let time = now.elapsed();
+    if matches.opt_present("time") {
+        eprintln!("{}", format!("{}ms", time.as_millis()).black());
+    }
 }
 
 

@@ -1,16 +1,15 @@
 use crate::lang::{Group, Project};
 use std::{fs, thread, io};
 use glob::Pattern;
-use std::path::{Path, Iter};
-use std::thread::JoinHandle;
-use std::sync::{mpsc, Arc, Barrier};
+use std::path::Path;
+use std::sync::mpsc;
 use mpsc::Sender;
-use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_is_clean_remote};
+use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
 use std::fs::File;
 use std::io::BufRead;
 use crate::print::{OutputType, SummaryType, print_groups};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
+use std::time::Instant;
 
 pub struct Rgs {
     code: String,
@@ -56,12 +55,42 @@ impl Rgs {
     pub fn run(&mut self) {
         match self.list_dir(String::from(&self.code).as_str(), self.depth) {
             Ok(_) => {
+                if self.fetch {
+                    self.fetch_projs();
+                }
                 self.update_projs();
                 self.groups.sort_by(|a, b| a.name.cmp(&b.name));
                 print_groups(&self.groups, &self.summary_type, &self.out_types)
             }
 
             Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
+        }
+    }
+
+    pub fn fetch_projs(&mut self) {
+        let (tx, rx) = channel();
+        let mut handles = vec![];
+
+        for i in 0..self.groups.len() {
+            for j in 0..self.groups[i].projs.len() {
+                let path = String::from(&self.groups[i].projs[j].path);
+                let tx = Sender::clone(&tx);
+                let handle = thread::spawn(move || {
+                    let now = Instant::now();
+                    git_fetch(&path);
+                    tx.send((i, j, now.elapsed().as_millis())).unwrap()
+                });
+                handles.push(handle);
+            }
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        drop(tx);
+        for (i, j, time) in rx {
+            let proj = &mut self.groups[i].projs[j];
+            proj.time += time;
         }
     }
 
@@ -75,8 +104,10 @@ impl Rgs {
                 let path = String::from(&self.groups[i].projs[j].path);
                 let tx = Sender::clone(&tx);
                 let handle = thread::spawn(move || {
+                    let now = Instant::now();
                     let is_ok = git_is_clean(&path);
-                    tx.send((i, j, is_ok)).unwrap();
+                    let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
+                    tx.send((i, j, is_ok, ahead_behind, now.elapsed().as_millis())).unwrap();
                 });
                 handles.push(handle);
             }
@@ -86,16 +117,17 @@ impl Rgs {
             handle.join().unwrap();
         }
         drop(tx);
-        rx.recv().unwrap();
-        for (i, j, is_ok) in rx {
-            self.groups[i].projs[j].is_ok = is_ok;
+        for (i, j, is_ok, ahead_behind, time) in rx {
+            let proj = &mut self.groups[i].projs[j];
+            proj.clean = is_ok;
+            proj.ahead_behind = ahead_behind;
+            proj.time += time;
         }
     }
 
 
-    pub fn list_dir(&mut self, path: &str, mut depth: i32) -> io::Result<()> {
+    pub fn list_dir(&mut self, path: &str, depth: i32) -> io::Result<()> {
         if depth == 0 { return Ok(()); }
-        depth -= 1;
 
         for entry in fs::read_dir(path)? {
             let path = entry?.path();
@@ -140,7 +172,7 @@ impl Rgs {
                     if self.code == par_name {
                         self.groups.push(Group::new(dir_name, path_str));
                     }
-                    self.list_dir(path_str, depth)?;
+                    self.list_dir(path_str, depth - 1)?;
                 }
             }
         };

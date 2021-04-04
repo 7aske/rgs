@@ -1,4 +1,4 @@
-use git2::{Repository, Status, Error};
+use git2::{Repository, Status, Error, BranchType};
 
 pub fn git_is_clean(path: &str) -> bool {
     return match Repository::open(path) {
@@ -19,7 +19,7 @@ pub fn git_is_inside_work_tree(path: &str) -> bool {
 }
 
 fn git_get_current_branch(repo: &Repository) -> Result<String, Error> {
-    let branch = repo.branches(None)?
+    let branch = repo.branches(Option::from(BranchType::Local))?
         .into_iter()
         .map(|b| b.unwrap().0)
         .find(|b| b.is_head());
@@ -38,12 +38,10 @@ pub fn git_fetch(path: &str) -> Result<(), Error> {
     let res = repo.find_remote("origin")?.fetch(&[branch], None, None); res
 }
 
-pub fn git_is_clean_remote(path: &str) -> Result<bool, Error> {
+pub fn git_ahead_behind(path: &str) -> Result<(usize, usize), Error> {
     let repo = Repository::open(path)?;
     let branch = git_get_current_branch(&repo)?;
-    let head = repo.head()?.peel_to_tree()?;
-    let origin_head = repo.find_reference(format!("refs/remotes/origin/{}", branch).as_str())?.peel_to_tree()?;
-    let diff = repo.diff_tree_to_tree(Some(&head), Some(&origin_head), None)?;
-    let stats = diff.stats()?;
-    Ok(stats.deletions() == 0 && stats.files_changed() == 0 && stats.insertions() == 0)
+    let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
+    let res = repo.graph_ahead_behind(rev.from().unwrap().id(), rev.to().unwrap().id())?;
+    Ok(res)
 }
