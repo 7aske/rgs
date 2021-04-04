@@ -6,6 +6,7 @@ pub enum OutputType {
     All,
     Dir,
     Time,
+    Modification,
 }
 
 #[derive(Eq, PartialEq)]
@@ -43,25 +44,8 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
         print!("{:16} {:24} ", g_name.color(COLOR_FG), p_name.color(color));
     });
 
-    let print_modified: Box<fn(&Project)> = Box::new(|p: &Project| {
-        let ahead_behind =  if p.is_ahead_behind(){
-            let ahead = format!("↑{:3}", p.ahead_behind.0).color(COLOR_AHEAD);
-            let behind = format!("↓{:3}", p.ahead_behind.1).color(COLOR_BEHIND);
-            format!("{:4} {:4}", ahead, behind)
-        } else {
-            String::new()
-        };
-
-        let color = match p.modified > 0 {
-            true => COLOR_DIRTY,
-            false => COLOR_CLEAN,
-        };
-
-        print!("{:5} {:9} ", format!("±{}", p.modified).color(color), ahead_behind);
-    });
-    let mut print_extra: Box<fn(&Project)> = Box::new(|_p| {
-        print!("");
-    });
+    let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!("{:16}", ""); });
+    let mut print_extra: Box<fn(&Project)> = Box::new(|_p| { print!(""); });
 
     let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0);
     for out_type in out_types {
@@ -76,6 +60,24 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
                 print_extra = Box::new(|p| {
                     let time = p.time.to_string() + "ms";
                     print!("{}", time.black());
+                });
+            }
+            OutputType::Modification => {
+                print_modified = Box::new(|p: &Project| {
+                    let ahead_behind = if p.is_ahead_behind() {
+                        let ahead = format!("↑{:3}", p.ahead_behind.0).color(COLOR_AHEAD);
+                        let behind = format!("↓{:3}", p.ahead_behind.1).color(COLOR_BEHIND);
+                        format!("{:4} {:4}", ahead, behind)
+                    } else {
+                        String::new()
+                    };
+
+                    let color = match p.modified > 0 {
+                        true => COLOR_DIRTY,
+                        false => COLOR_CLEAN,
+                    };
+
+                    print!("{:5} {:9} ", format!("±{}", p.modified).color(color), ahead_behind);
                 });
             }
         }
@@ -98,7 +100,7 @@ fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
             let time = out_types.iter().find(|o| o == &&OutputType::Time).is_some();
             let g_name = &l.name;
             let g_projs = l.projs.len().to_string();
-            let time:String = if time {
+            let time: String = if time {
                 l.projs.iter().map(|p| p.time).max().unwrap().to_string() + "ms"
             } else {
                 String::new()

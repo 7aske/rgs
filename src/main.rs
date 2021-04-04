@@ -51,6 +51,7 @@ fn main() {
     opts.optflag("C", "print-code", "print CODE variable and exit");
     opts.optflag("f", "fetch", "also fetch from origin");
     opts.optflag("t", "time", "show time elapsed per project");
+    opts.optflag("m", "modification", "show modifications or ahead/behind status");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -92,6 +93,10 @@ fn main() {
 
     if matches.opt_present("time") {
         out_types.push(OutputType::Time);
+    }
+
+    if matches.opt_present("modification") {
+        out_types.push(OutputType::Modification);
     }
 
     let no_codeignore = matches.opt_present("no-ignore");
