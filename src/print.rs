@@ -32,13 +32,20 @@ pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types
 
 fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     let mut print: Box<fn(&Group, &Project)> = Box::new(|l: &Group, p: &Project| {
-        let color = match p.clean && p.ahead_behind.0 == 0 && p.ahead_behind.1 == 0 {
+        let ahead_behind_zero = p.ahead_behind.0 == 0 && p.ahead_behind.1 == 0;
+        let color = match p.clean && ahead_behind_zero {
             true => "green",
             false => "yellow"
         };
-        let ahead = format!("↑{:2}", p.ahead_behind.0).color(AHEAD_COLOR);
-        let behind = format!("↓{:2}", p.ahead_behind.1).color(BEHIND_COLOR);
-        print!("{:16} {:32}  {} {} ", l.name.color(FG_COLOR), p.name.color(color), ahead, behind);
+
+        let ahead_behind: String = if ahead_behind_zero {
+            String::from("")
+        } else {
+            let ahead = format!("↑{:2}", p.ahead_behind.0).color(AHEAD_COLOR);
+            let behind = format!("↓{:2}", p.ahead_behind.1).color(BEHIND_COLOR);
+            format!("{} {}", ahead, behind)
+        };
+        print!("{:16} {:32} {} ", l.name.color(FG_COLOR), p.name.color(color), ahead_behind);
     });
     let mut print_extra: Box<fn(&Project)> = Box::new(|_p| {
         print!("");
