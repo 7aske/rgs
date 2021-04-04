@@ -2,7 +2,7 @@
 pub struct Project {
     pub name: String,
     pub path: String,
-    pub clean: bool,
+    pub modified: usize,
     pub time: u128,
     pub ahead_behind: (usize, usize),
 }
@@ -20,10 +20,17 @@ impl Project {
         Project {
             name: String::from(name),
             path: String::from(path),
-            clean: true,
-            ahead_behind: (0,0),
+            modified: 0,
+            ahead_behind: (0, 0),
             time: 0,
         }
+    }
+    pub fn is_clean(&self) -> bool {
+        self.modified == 0 && !self.is_ahead_behind()
+    }
+
+    pub fn is_ahead_behind(&self) -> bool {
+        self.ahead_behind.0 > 0 || self.ahead_behind.1 > 0
     }
 }
 

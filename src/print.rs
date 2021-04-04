@@ -16,11 +16,11 @@ pub enum SummaryType {
 }
 
 
-const DIRTY_COLOR: &str = "yellow";
-const OK_COLOR: &str = "green";
-const FG_COLOR: &str = "blue";
-const AHEAD_COLOR: &str = "cyan";
-const BEHIND_COLOR: &str = "magenta";
+const COLOR_DIRTY: &str = "yellow";
+const COLOR_CLEAN: &str = "green";
+const COLOR_FG: &str = "blue";
+const COLOR_AHEAD: &str = "cyan";
+const COLOR_BEHIND: &str = "magenta";
 
 pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>) {
     match summary_type {
@@ -32,26 +32,35 @@ pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types
 
 fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     let mut print: Box<fn(&Group, &Project)> = Box::new(|l: &Group, p: &Project| {
-        let ahead_behind_zero = p.ahead_behind.0 == 0 && p.ahead_behind.1 == 0;
-        let color = match p.clean && ahead_behind_zero {
+        let color = match p.is_clean() {
             true => "green",
             false => "yellow"
         };
 
-        let ahead_behind: String = if ahead_behind_zero {
-            String::from("         ")
+        print!("{:16} {:24} ", l.name.color(COLOR_FG), p.name.color(color));
+    });
+
+    let print_modified: Box<fn(&Project)> = Box::new(|p: &Project| {
+        let ahead_behind =  if p.is_ahead_behind(){
+            let ahead = format!("↑{:3}", p.ahead_behind.0).color(COLOR_AHEAD);
+            let behind = format!("↓{:3}", p.ahead_behind.1).color(COLOR_BEHIND);
+            format!("{:4} {:4}", ahead, behind)
         } else {
-            let ahead = format!("↑{:3}", p.ahead_behind.0).color(AHEAD_COLOR);
-            let behind = format!("↓{:3}", p.ahead_behind.1).color(BEHIND_COLOR);
-            format!("{} {}", ahead, behind)
+            String::new()
         };
-        print!("{:16} {:32} {} ", l.name.color(FG_COLOR), p.name.color(color), ahead_behind);
+
+        let color = match p.modified > 0 {
+            true => COLOR_DIRTY,
+            false => COLOR_CLEAN,
+        };
+
+        print!("{:5} {:9} ", format!("±{}", p.modified).color(color), ahead_behind);
     });
     let mut print_extra: Box<fn(&Project)> = Box::new(|_p| {
         print!("");
     });
 
-    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| !p.clean || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0);
+    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0);
     for out_type in out_types {
         match out_type {
             OutputType::All => {
@@ -72,6 +81,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     for l in langs {
         for p in l.projs.iter().filter(filter.as_ref()) {
             print(l, p);
+            print_modified(p);
             print_extra(p);
             print!("\n");
         }
@@ -82,7 +92,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
 fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name.color(FG_COLOR), l.projs.len().to_string().color(OK_COLOR), if l.not_ok > 0 { l.not_ok.to_string().color(DIRTY_COLOR).bold() } else { "".to_string().white() }, l.path.color("white"));
+            println!("{:8} {:4} {:2} {}", l.name.color(COLOR_FG), l.projs.len().to_string().color(COLOR_CLEAN), if l.not_ok > 0 { l.not_ok.to_string().color(COLOR_DIRTY).bold() } else { "".to_string().white() }, l.path.color("white"));
         }
     }
     default_print(langs, out_types);
@@ -91,9 +101,9 @@ fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
 fn very_verbose_print(langs: &Vec<Group>) {
     for (i, l) in langs.iter().enumerate() {
         if i == langs.len() - 1 {
-            println!("└──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
+            println!("└──{} {}", l.name.color(COLOR_FG), format!("({})", l.projs.len()).black());
         } else {
-            println!("├──{} {}", l.name.color(FG_COLOR), format!("({})", l.projs.len()).black());
+            println!("├──{} {}", l.name.color(COLOR_FG), format!("({})", l.projs.len()).black());
         }
         for (j, p) in &mut l.projs.iter().enumerate() {
             let mut out = String::from("");
@@ -108,10 +118,10 @@ fn very_verbose_print(langs: &Vec<Group>) {
             } else {
                 out += "├──"
             }
-            if p.clean {
-                out += format!("{}", p.name.color(OK_COLOR)).as_str();
+            if p.modified > 0 {
+                out += format!("{}", p.name.color(COLOR_CLEAN)).as_str();
             } else {
-                out += format!("{}  *", p.name.color(DIRTY_COLOR).bold()).as_str();
+                out += format!("{}  *", p.name.color(COLOR_DIRTY).bold()).as_str();
             }
             println!("{}", out);
         }

@@ -118,9 +118,9 @@ impl Rgs {
                 let tx = Sender::clone(&tx);
                 let handle = thread::spawn(move || {
                     let now = Instant::now();
-                    let is_ok = git_is_clean(&path);
+                    let modified = git_is_clean(&path);
                     let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
-                    tx.send((i, j, is_ok, ahead_behind, now.elapsed().as_millis())).unwrap();
+                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis())).unwrap();
                 });
                 handles.push(handle);
             }
@@ -130,9 +130,9 @@ impl Rgs {
             handle.join().unwrap();
         }
         drop(tx);
-        for (i, j, is_ok, ahead_behind, time) in rx {
+        for (i, j, modified, ahead_behind, time) in rx {
             let proj = &mut self.groups[i].projs[j];
-            proj.clean = is_ok;
+            proj.modified = modified;
             proj.ahead_behind = ahead_behind;
             proj.time += time;
         }

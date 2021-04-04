@@ -1,12 +1,12 @@
 use git2::{Repository, Status, Error, BranchType};
 
-pub fn git_is_clean(path: &str) -> bool {
+pub fn git_is_clean(path: &str) -> usize {
     return match Repository::open(path) {
         Ok(repo) => {
             let statuses = repo.statuses(None).unwrap();
-            statuses.iter().filter(|s| s.status() != Status::IGNORED).count() == 0
+            statuses.iter().filter(|s| s.status() != Status::IGNORED).count()
         }
-        Err(_) => false
+        Err(_) => 0
     };
 }
 
