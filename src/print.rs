@@ -25,7 +25,7 @@ const BEHIND_COLOR: &str = "magenta";
 pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>) {
     match summary_type {
         SummaryType::VeryVerbose => very_verbose_print(langs),
-        SummaryType::Verbose => verbose_print(langs),
+        SummaryType::Verbose => verbose_print(langs, output_types),
         _ => default_print(langs, output_types),
     }
 }
@@ -79,20 +79,13 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
 }
 
 
-fn verbose_print(langs: &Vec<Group>) {
-    let mut summary = String::from("\n");
-
+fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     for l in langs {
         if l.projs.len() > 0 {
             println!("{:8} {:4} {:2} {}", l.name.color(FG_COLOR), l.projs.len().to_string().color(OK_COLOR), if l.not_ok > 0 { l.not_ok.to_string().color(DIRTY_COLOR).bold() } else { "".to_string().white() }, l.path.color("white"));
-            for p in &l.projs {
-                if !p.clean {
-                    summary += format!("{:24} {:24} {:8}\n", l.name.color(FG_COLOR), p.name.color(DIRTY_COLOR), (p.time.to_string() + "ms").black()).as_str();
-                }
-            }
         }
     }
-    print!("{}", summary);
+    default_print(langs, out_types);
 }
 
 fn very_verbose_print(langs: &Vec<Group>) {
@@ -128,5 +121,4 @@ fn very_verbose_print(langs: &Vec<Group>) {
 pub fn print_progress(total: i32, current: i32) {
     let progress = format!("{}/{}", total, total - current).black();
     println!("{}", progress);
-
 }
