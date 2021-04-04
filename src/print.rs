@@ -39,10 +39,10 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
         };
 
         let ahead_behind: String = if ahead_behind_zero {
-            String::from("")
+            String::from("         ")
         } else {
-            let ahead = format!("↑{:2}", p.ahead_behind.0).color(AHEAD_COLOR);
-            let behind = format!("↓{:2}", p.ahead_behind.1).color(BEHIND_COLOR);
+            let ahead = format!("↑{:3}", p.ahead_behind.0).color(AHEAD_COLOR);
+            let behind = format!("↓{:3}", p.ahead_behind.1).color(BEHIND_COLOR);
             format!("{} {}", ahead, behind)
         };
         print!("{:16} {:32} {} ", l.name.color(FG_COLOR), p.name.color(color), ahead_behind);
@@ -123,4 +123,10 @@ fn very_verbose_print(langs: &Vec<Group>) {
             println!("{}", out);
         }
     }
+}
+
+pub fn print_progress(total: i32, current: i32) {
+    let progress = format!("{}/{}", total, total - current).black();
+    println!("{}", progress);
+
 }

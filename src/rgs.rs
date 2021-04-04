@@ -7,7 +7,7 @@ use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
 use std::fs::File;
 use std::io::BufRead;
-use crate::print::{OutputType, SummaryType, print_groups};
+use crate::print::{OutputType, SummaryType, print_groups, print_progress};
 use std::sync::mpsc::channel;
 use std::time::Instant;
 
@@ -69,24 +69,37 @@ impl Rgs {
 
     pub fn fetch_projs(&mut self) {
         let (tx, rx) = channel();
+        let (tx_progress, rx_progress) = channel();
         let mut handles = vec![];
 
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
                 let tx = Sender::clone(&tx);
+                let tx_progress = Sender::clone(&tx_progress);
                 let handle = thread::spawn(move || {
                     let now = Instant::now();
                     git_fetch(&path);
+                    tx_progress.send((String::from(&path), true));
                     tx.send((i, j, now.elapsed().as_millis())).unwrap()
                 });
                 handles.push(handle);
             }
         }
 
+        let mut rx_progress = rx_progress.iter();
+        let mut count = self.count;
+        while count > 0 {
+            count -= 1;
+            print_progress(self.count, count);
+            rx_progress.next();
+            print!("{esc}c", esc = 27 as char);
+        }
+
         for handle in handles {
             handle.join().unwrap();
         }
+
         drop(tx);
         for (i, j, time) in rx {
             let proj = &mut self.groups[i].projs[j];
