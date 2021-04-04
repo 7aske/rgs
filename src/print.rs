@@ -31,13 +31,16 @@ pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types
 }
 
 fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Group, &Project)> = Box::new(|l: &Group, p: &Project| {
+    let mut print: Box<fn(&Group, &Project)> = Box::new(|g: &Group, p: &Project| {
         let color = match p.is_clean() {
             true => "green",
             false => "yellow"
         };
-
-        print!("{:16} {:24} ", l.name.color(COLOR_FG), p.name.color(color));
+        let mut p_name = p.name.clone();
+        p_name.truncate(24);
+        let mut g_name = g.name.clone();
+        g_name.truncate(16);
+        print!("{:16} {:24} ", g_name.color(COLOR_FG), p_name.color(color));
     });
 
     let print_modified: Box<fn(&Project)> = Box::new(|p: &Project| {
@@ -92,7 +95,15 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
 fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
     for l in langs {
         if l.projs.len() > 0 {
-            println!("{:8} {:4} {:2} {}", l.name.color(COLOR_FG), l.projs.len().to_string().color(COLOR_CLEAN), if l.not_ok > 0 { l.not_ok.to_string().color(COLOR_DIRTY).bold() } else { "".to_string().white() }, l.path.color("white"));
+            let time = out_types.iter().find(|o| o == &&OutputType::Time).is_some();
+            let g_name = &l.name;
+            let g_projs = l.projs.len().to_string();
+            let time:String = if time {
+                l.projs.iter().map(|p| p.time).max().unwrap().to_string() + "ms"
+            } else {
+                String::new()
+            };
+            println!("{:8} {:4} {:6} {}", g_name, g_projs.color(COLOR_CLEAN), time.color("black"), l.path.color("white"));
         }
     }
     default_print(langs, out_types);
