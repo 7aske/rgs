@@ -55,6 +55,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
             }
             OutputType::Dir => {
                 print = Box::new(|_l: &Group, p: &Project| print!("{}", p.path));
+                print_modified = Box::new(|_p: &Project| { print!(""); });
             }
             OutputType::Time => {
                 print_extra = Box::new(|p| {
