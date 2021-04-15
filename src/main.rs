@@ -52,6 +52,7 @@ fn main() {
     opts.optflag("f", "fetch", "also fetch from origin");
     opts.optflag("t", "time", "show time elapsed per project");
     opts.optflag("m", "modification", "show modifications or ahead/behind status");
+    opts.optmulti("e", "email", "email to provide commit stats for", "EMAIL");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -99,13 +100,15 @@ fn main() {
         out_types.push(OutputType::Modification);
     }
 
+    let emails = matches.opt_strs("email");
+
     let no_codeignore = matches.opt_present("no-ignore");
     let fetch = matches.opt_present("fetch");
 
     let depth = matches.opt_str("depth").unwrap_or(String::from("2"));
     let depth = depth.parse::<i32>().unwrap_or(2);
 
-    let mut rgs = Rgs::new(code, no_codeignore, fetch, out_types, summary_type, depth);
+    let mut rgs = Rgs::new(code, no_codeignore, fetch, out_types, summary_type, depth, emails);
     rgs.run();
     let time = now.elapsed();
     if matches.opt_present("time") {

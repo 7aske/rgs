@@ -1,4 +1,4 @@
-use git2::{Repository, Status, Error, BranchType};
+use git2::{Repository, Status, Error, BranchType, Commit, Signature, Time};
 
 pub fn git_is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -35,7 +35,8 @@ fn git_get_current_branch(repo: &Repository) -> Result<String, Error> {
 pub fn git_fetch(path: &str) -> Result<(), Error> {
     let repo = Repository::open(path)?;
     let branch = git_get_current_branch(&repo)?;
-    let res = repo.find_remote("origin")?.fetch(&[branch], None, None); res
+    let res = repo.find_remote("origin")?.fetch(&[branch], None, None);
+    res
 }
 
 pub fn git_ahead_behind(path: &str) -> Result<(usize, usize), Error> {
@@ -44,4 +45,22 @@ pub fn git_ahead_behind(path: &str) -> Result<(usize, usize), Error> {
     let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
     let res = repo.graph_ahead_behind(rev.from().unwrap().id(), rev.to().unwrap().id())?;
     Ok(res)
+}
+
+pub fn git_commits<'a>(path: &'a str, email: &'a String) -> Result<Vec<(String, Time)>, Error> {
+    let repo = Repository::open(path)?;
+    let mut walk = repo.revwalk()?;
+    walk.push_head();
+    let commits = walk.into_iter().map(|r| {
+        let r = r.unwrap();
+        repo.find_commit(r).unwrap().clone()
+    })
+        .filter(|c| c.committer().email().unwrap() == email)
+        .map(|c| {
+            let committer = String::from(c.committer().email().unwrap());
+            let time = c.time().clone();
+            (committer, time)
+        })
+        .collect();
+    Ok(commits)
 }

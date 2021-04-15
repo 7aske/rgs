@@ -4,12 +4,14 @@ use glob::Pattern;
 use std::path::Path;
 use std::sync::mpsc;
 use mpsc::Sender;
-use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
+use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind, git_commits};
 use std::fs::File;
 use std::io::BufRead;
 use crate::print::{OutputType, SummaryType, print_groups, print_progress};
 use std::sync::mpsc::channel;
 use std::time::Instant;
+use git2::Time;
+use std::borrow::{Borrow, BorrowMut};
 
 pub struct Rgs {
     code: String,
@@ -20,10 +22,18 @@ pub struct Rgs {
     groups: Vec<Group>,
     count: i32,
     depth: i32,
+    emails: Vec<String>,
+    stats: Vec<(String, Time)>
 }
 
 impl Rgs {
-    pub fn new(code: String, no_codeignore: bool, fetch: bool, out_types: Vec<OutputType>, summary_type: SummaryType, depth: i32) -> Self {
+    pub fn new(code: String,
+               no_codeignore: bool,
+               fetch: bool,
+               out_types: Vec<OutputType>,
+               summary_type: SummaryType,
+               depth: i32,
+               emails: Vec<String>) -> Self {
         let mut codeignore = vec![];
         if !no_codeignore {
             match File::open(Path::new(&code).join(".codeignore")) {
@@ -49,6 +59,8 @@ impl Rgs {
             depth,
             groups: langs,
             count: 0,
+            emails,
+            stats: vec![]
         }
     }
 
@@ -120,7 +132,8 @@ impl Rgs {
                     let now = Instant::now();
                     let modified = git_is_clean(&path);
                     let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
-                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis())).unwrap();
+                    let stats = git_commits(&path, &String::from("ntasic7@gmail.com")).unwrap_or(vec![]);
+                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis(), stats)).unwrap();
                 });
                 handles.push(handle);
             }
@@ -130,11 +143,16 @@ impl Rgs {
             handle.join().unwrap();
         }
         drop(tx);
-        for (i, j, modified, ahead_behind, time) in rx {
+        for (i, j, modified, ahead_behind, time, mut stats) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.modified = modified;
             proj.ahead_behind = ahead_behind;
             proj.time += time;
+            let stats = &mut stats;
+            self.stats.append(stats)
+        }
+        for s in &self.stats {
+            println!("{}", s.0);
         }
     }
 
