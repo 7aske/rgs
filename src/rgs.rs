@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
-use std::fs::File;
+use std::fs::{File, read_to_string};
 use std::io::BufRead;
 use crate::print::{OutputType, SummaryType, print_groups, print_progress};
 use std::sync::mpsc::channel;
@@ -152,12 +152,17 @@ impl Rgs {
                 continue;
             }
 
+
             if path.is_dir() {
                 let dir_name = path.file_name().unwrap().to_str().unwrap();
                 let par_name = path.parent().unwrap().to_str().unwrap();
 
 
                 if git_is_inside_work_tree(&path_str) {
+                    if fs::read_link(path.clone()).is_ok() && !self.out_types.contains(&OutputType::All) {
+                        continue;
+                    }
+
                     self.count += 1;
 
                     // last or new
