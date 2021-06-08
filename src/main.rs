@@ -44,7 +44,7 @@ fn main() {
     opts.optflag("h", "help", "show this message and exit");
     opts.optflagmulti("v", "verbose", "verbose");
     opts.optflag("a", "all", "show all repositories");
-    opts.optflag("d", "dir", "show all repository directories");
+    opts.optflag("d", "dir", "show all repository directories (turns off -t and -m flags)");
     opts.optflag("i", "no-ignore", "doesn't read .codeignore file");
     opts.optopt("D", "depth", "project search recursive depth", "NUM");
     opts.optopt("c", "code", "set CODE variable", "PATH");
@@ -87,16 +87,17 @@ fn main() {
         out_types.push(OutputType::All)
     }
 
-    if matches.opt_present("dir") {
-        out_types.push(OutputType::Dir);
-    }
-
     if matches.opt_present("time") {
         out_types.push(OutputType::Time);
     }
 
     if matches.opt_present("modification") {
         out_types.push(OutputType::Modification);
+    }
+
+    if matches.opt_present("dir") {
+        out_types.push(OutputType::Dir);
+        out_types.retain(|x| *x != OutputType::Modification && *x != OutputType::Time);
     }
 
     let no_codeignore = matches.opt_present("no-ignore");

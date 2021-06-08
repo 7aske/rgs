@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
-use std::fs::{File, read_to_string};
+use std::fs::{File};
 use std::io::BufRead;
 use crate::print::{OutputType, SummaryType, print_groups, print_progress};
 use std::sync::mpsc::channel;
