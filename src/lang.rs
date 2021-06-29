@@ -1,6 +1,7 @@
 #[derive(Clone)]
 pub struct Project {
     pub name: String,
+    pub grp_name: String,
     pub path: String,
     pub modified: usize,
     pub time: u128,
@@ -16,10 +17,11 @@ pub struct Group {
 }
 
 impl Project {
-    pub fn new(name: &str, path: &str) -> Self {
+    pub fn new(name: &str, path: &str, grp_name: &str) -> Self {
         Project {
             name: String::from(name),
             path: String::from(path),
+            grp_name: String::from(grp_name),
             modified: 0,
             ahead_behind: (0, 0),
             time: 0,

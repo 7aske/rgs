@@ -1,7 +1,8 @@
 use crate::lang::{Project, Group};
 use colored::*;
+use std::cmp::Ordering;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub enum OutputType {
     All,
     Dir,
@@ -9,11 +10,20 @@ pub enum OutputType {
     Modification,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub enum SummaryType {
     Default,
     Verbose,
     VeryVerbose,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub enum SortType {
+    None,
+    Dir,
+    Time,
+    Mod,
+    AheadBehind
 }
 
 
@@ -23,23 +33,57 @@ const COLOR_FG: &str = "blue";
 const COLOR_AHEAD: &str = "cyan";
 const COLOR_BEHIND: &str = "magenta";
 
-pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>) {
-    match summary_type {
-        SummaryType::VeryVerbose => very_verbose_print(langs),
-        SummaryType::Verbose => verbose_print(langs, output_types),
-        _ => default_print(langs, output_types),
+fn sort_default(_: &Project, _: &Project) -> Ordering {
+    Ordering::Equal
+}
+
+fn sort_dir(proj_a: &Project, proj_b: &Project) -> Ordering {
+    proj_a.path.cmp(&proj_b.path)
+}
+
+fn sort_ahead_behind(proj_a: &Project, proj_b: &Project) -> Ordering {
+    let sum_changes_a = proj_a.ahead_behind.0 + proj_a.ahead_behind.1;
+    let sum_changes_b = proj_b.ahead_behind.0 + proj_b.ahead_behind.1;
+
+    if sum_changes_a != 0 || sum_changes_b != 0 {
+        sum_changes_a.partial_cmp(&sum_changes_b).unwrap()
+    } else {
+        proj_a.modified.partial_cmp(&proj_b.modified).unwrap()
     }
 }
 
-fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
-    let mut print: Box<fn(&Group, &Project)> = Box::new(|g: &Group, p: &Project| {
+fn sort_time(proj_a: &Project, proj_b: &Project) -> Ordering {
+    proj_a.time.partial_cmp(&proj_b.time).unwrap()
+}
+
+fn sort_modifications(proj_a: &Project, proj_b: &Project) -> Ordering {
+    if proj_a.modified != 0 || proj_b.modified != 0 {
+        proj_a.modified.partial_cmp(&proj_b.modified).unwrap()
+    } else {
+        let sum_changes_a = proj_a.ahead_behind.0 + proj_a.ahead_behind.1;
+        let sum_changes_b = proj_b.ahead_behind.0 + proj_b.ahead_behind.1;
+
+        sum_changes_a.partial_cmp(&sum_changes_b).unwrap()
+    }
+}
+
+pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>, sort: &SortType) {
+    match summary_type {
+        SummaryType::VeryVerbose => very_verbose_print(langs),
+        SummaryType::Verbose => verbose_print(langs, output_types, sort),
+        _ => default_print(langs, output_types, sort),
+    }
+}
+
+fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
+    let mut print: Box<fn(&Project)> = Box::new(|p: &Project| {
         let color = match p.is_clean() {
             true => "green",
             false => "yellow"
         };
         let mut p_name = p.name.clone();
         p_name.truncate(24);
-        let mut g_name = g.name.clone();
+        let mut g_name = p.grp_name.clone();
         g_name.truncate(16);
         print!("{:16} {:24} ", g_name.color(COLOR_FG), p_name.color(color));
     });
@@ -54,7 +98,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
                 filter = Box::new(|_p: &&Project| true);
             }
             OutputType::Dir => {
-                print = Box::new(|_l: &Group, p: &Project| print!("{}", p.path));
+                print = Box::new(|_p: &Project| print!("{}", _p.path));
                 print_modified = Box::new(|_p: &Project| { print!(""); });
             }
             OutputType::Time => {
@@ -84,18 +128,28 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
         }
     }
 
-    for l in langs {
-        for p in l.projs.iter().filter(filter.as_ref()) {
-            print(l, p);
-            print_modified(p);
-            print_extra(p);
-            print!("\n");
-        }
+    let mut projs: Vec<Project> = langs.iter().flat_map(|l| l.projs.to_vec()).collect();
+    if *sort != SortType::None {
+        let mut sort_fn: fn(&Project, &Project) -> Ordering = match sort {
+            SortType::Dir => sort_dir,
+            SortType::Time => sort_time,
+            SortType::Mod => sort_modifications,
+            SortType::AheadBehind => sort_ahead_behind,
+            _ => sort_default,
+        };
+        projs.sort_by(sort_fn);
+    }
+
+    for p in projs.iter().filter(filter.as_ref()) {
+        print(p);
+        print_modified(p);
+        print_extra(p);
+        print!("\n");
     }
 }
 
 
-fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
+fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
     for l in langs {
         if l.projs.len() > 0 {
             let time = out_types.iter().find(|o| o == &&OutputType::Time).is_some();
@@ -109,7 +163,7 @@ fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>) {
             println!("{:8} {:4} {:6} {}", g_name, g_projs.color(COLOR_CLEAN), time.color("black"), l.path.color("white"));
         }
     }
-    default_print(langs, out_types);
+    default_print(langs, out_types, sort);
 }
 
 fn very_verbose_print(langs: &Vec<Group>) {

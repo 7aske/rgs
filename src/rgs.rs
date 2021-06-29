@@ -5,50 +5,37 @@ use std::path::Path;
 use std::sync::mpsc;
 use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
-use std::fs::{File};
+use std::fs::{File, read_to_string};
 use std::io::BufRead;
-use crate::print::{OutputType, SummaryType, print_groups, print_progress};
+use crate::print::{OutputType, SummaryType, print_groups, print_progress, SortType};
 use std::sync::mpsc::channel;
 use std::time::Instant;
+use git2::Sort;
 
 pub struct Rgs {
     code: String,
     codeignore: Vec<Pattern>,
-    fetch: bool,
     out_types: Vec<OutputType>,
+    sort: SortType,
     summary_type: SummaryType,
     groups: Vec<Group>,
+    fetch: bool,
     count: i32,
     depth: i32,
 }
 
 impl Rgs {
-    pub fn new(code: String, no_codeignore: bool, fetch: bool, out_types: Vec<OutputType>, summary_type: SummaryType, depth: i32) -> Self {
-        let mut codeignore = vec![];
-        if !no_codeignore {
-            match File::open(Path::new(&code).join(".codeignore")) {
-                Ok(file) => {
-                    codeignore = io::BufReader::new(file)
-                        .lines()
-                        .filter_map(|line| line.ok())
-                        .filter(|line| !line.starts_with("#"))
-                        .map(|line| Pattern::new(line.as_str()).unwrap())
-                        .collect()
-                }
-                Err(_) => {}
-            };
-        }
-        let langs = vec![];
-
+    pub fn new(code: String) -> Rgs {
         Rgs {
             code,
-            out_types,
-            summary_type,
-            codeignore,
-            fetch,
-            depth,
-            groups: langs,
+            codeignore: vec![],
             count: 0,
+            depth: 2,
+            fetch: false,
+            groups: vec![],
+            out_types: vec![],
+            sort: SortType::Dir,
+            summary_type: SummaryType::Default,
         }
     }
 
@@ -59,8 +46,8 @@ impl Rgs {
                     self.fetch_projs();
                 }
                 self.update_projs();
-                self.groups.sort_by(|a, b| a.name.cmp(&b.name));
-                print_groups(&self.groups, &self.summary_type, &self.out_types)
+                // self.groups.sort_by(|a, b| a.name.cmp(&b.name));
+                print_groups(&self.groups, &self.summary_type, &self.out_types, &self.sort)
             }
 
             Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
@@ -184,7 +171,7 @@ impl Rgs {
                         }
                     }
 
-                    lang.add_project(Project::new(dir_name, path_str));
+                    lang.add_project(Project::new(dir_name, path_str, &lang.name.as_str()));
                     self.groups.push(lang);
                 } else {
                     if self.code == par_name {
@@ -195,5 +182,51 @@ impl Rgs {
             }
         };
         Ok(())
+    }
+
+    pub fn sort(mut self, sort: SortType) -> Self {
+        self.sort = sort;
+        self
+    }
+
+    pub fn fetch(mut self, fetch: bool) -> Self {
+        self.fetch = fetch;
+        self
+    }
+
+    pub fn out_types(mut self, out_types: Vec<OutputType>) -> Self {
+        self.out_types = out_types;
+        self
+    }
+
+    pub fn summary(mut self, summary: SummaryType) -> Self {
+        self.summary_type = summary;
+        self
+    }
+
+    pub fn depth(mut self, depth: i32) -> Self {
+        self.depth = depth;
+        self
+    }
+
+
+    pub fn codeignore(mut self, codeignore: bool) -> Self {
+        if !codeignore {
+            return self;
+        }
+
+        self.codeignore = match File::open(Path::new(&self.code).join(".codeignore")) {
+            Ok(file) => {
+                io::BufReader::new(file)
+                    .lines()
+                    .filter_map(|line| line.ok())
+                    .filter(|line| !line.starts_with("#"))
+                    .map(|line| Pattern::new(line.as_str()).unwrap())
+                    .collect()
+            }
+            Err(_) => { vec![] }
+        };
+
+        self
     }
 }
