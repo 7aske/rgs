@@ -130,7 +130,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
 
     let mut projs: Vec<Project> = langs.iter().flat_map(|l| l.projs.to_vec()).collect();
     if *sort != SortType::None {
-        let mut sort_fn: fn(&Project, &Project) -> Ordering = match sort {
+        let sort_fn: fn(&Project, &Project) -> Ordering = match sort {
             SortType::Dir => sort_dir,
             SortType::Time => sort_time,
             SortType::Mod => sort_modifications,

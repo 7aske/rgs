@@ -1,16 +1,15 @@
 use crate::lang::{Group, Project};
 use std::{fs, thread, io};
 use glob::Pattern;
-use std::path::Path;
+use std::path::{Path};
 use std::sync::mpsc;
 use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
-use std::fs::{File, read_to_string};
-use std::io::BufRead;
+use std::fs::{File};
+use std::io::{BufRead};
 use crate::print::{OutputType, SummaryType, print_groups, print_progress, SortType};
 use std::sync::mpsc::channel;
 use std::time::Instant;
-use git2::Sort;
 
 pub struct Rgs {
     code: String,
@@ -139,15 +138,26 @@ impl Rgs {
                 continue;
             }
 
-
             if path.is_dir() {
                 let dir_name = path.file_name().unwrap().to_str().unwrap();
                 let par_name = path.parent().unwrap().to_str().unwrap();
 
-
                 if git_is_inside_work_tree(&path_str) {
-                    if fs::read_link(path.clone()).is_ok() && !self.out_types.contains(&OutputType::All) {
-                        continue;
+
+                    // check if it is a link
+                    match fs::read_link(path.clone()) {
+                        Ok(res) => {
+                            // if its not an absolute link treat it as an alias
+                            if !res.is_absolute() {
+                                continue;
+                            }
+
+                            // if it is an absolute link within code directory treat it as an alias
+                            if res.starts_with(self.code.as_str()) {
+                                continue;
+                            }
+                        }
+                        Err(_) => {}
                     }
 
                     self.count += 1;

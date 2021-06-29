@@ -9,7 +9,6 @@ use colored::*;
 use crate::print::{SummaryType, OutputType, SortType};
 use crate::rgs::Rgs;
 use getopts::Options;
-use git2::Sort;
 use std::env;
 use std::path::Path;
 use std::process;
