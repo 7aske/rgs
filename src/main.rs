@@ -56,7 +56,7 @@ fn main() {
     opts.optflag("f", "fetch", "also fetch from origin");
     opts.optflag("t", "time", "show time elapsed per project");
     opts.optflag("m", "modification", "show modifications or ahead/behind status");
-    opts.optopt("s", "sort", "sort by: modifications (mod), ahead-behind (ab), time(time) required to parse and directory name (dir)", "SORT");
+    opts.optopt("s", "sort", "sort by: directory (d), modifications (m), time (t), ahead-behind (a)", "SORT");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -110,7 +110,7 @@ fn main() {
             Some(res) => match res.as_str() {
                 "modifications" | "mod" | "m" => SortType::Mod,
                 "time" | "t" => SortType::Time,
-                "ahead-behind" | "ab" => SortType::AheadBehind,
+                "ahead-behind" | "ab" | "a" => SortType::AheadBehind,
                 "directory" | "dir" | "d" => SortType::Dir,
                 _ => SortType::Dir,
             },
