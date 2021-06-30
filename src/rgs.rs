@@ -48,7 +48,7 @@ impl Rgs {
                     self.fetch_projs();
                 }
                 self.update_projs();
-                // self.groups.sort_by(|a, b| a.name.cmp(&b.name));
+                self.groups.sort_by(|a, b| a.name.cmp(&b.name));
                 print_groups(&self.groups, &self.summary_type, &self.out_types, &self.sort)
             }
 
