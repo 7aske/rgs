@@ -1,5 +1,5 @@
 use crate::lang::{Group, Project};
-use std::{fs, thread, io};
+use std::{fs, io};
 use glob::Pattern;
 use std::path::{Path};
 use std::sync::mpsc;
@@ -10,6 +10,7 @@ use std::io::{BufRead};
 use crate::print::{OutputType, SummaryType, print_groups, print_progress, SortType};
 use std::sync::mpsc::channel;
 use std::time::Instant;
+use threadpool::ThreadPool;
 
 pub struct Rgs {
     code: String,
@@ -21,6 +22,7 @@ pub struct Rgs {
     fetch: bool,
     count: i32,
     depth: i32,
+    pool: ThreadPool,
 }
 
 impl Rgs {
@@ -35,6 +37,7 @@ impl Rgs {
             out_types: vec![],
             sort: SortType::Dir,
             summary_type: SummaryType::Default,
+            pool: ThreadPool::new(num_cpus::get())
         }
     }
 
@@ -55,67 +58,52 @@ impl Rgs {
 
     pub fn fetch_projs(&mut self) {
         let (tx, rx) = channel();
-        let (tx_progress, rx_progress) = channel();
-        let mut handles = vec![];
 
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
                 let tx = Sender::clone(&tx);
-                let tx_progress = Sender::clone(&tx_progress);
-                let handle = thread::spawn(move || {
+                self.pool.execute(move || {
                     let now = Instant::now();
                     git_fetch(&path);
-                    tx_progress.send((String::from(&path), true));
                     tx.send((i, j, now.elapsed().as_millis())).unwrap()
                 });
-                handles.push(handle);
             }
         }
 
-        let mut rx_progress = rx_progress.iter();
-        let mut count = self.count;
-        while count > 0 {
-            count -= 1;
-            print_progress(self.count, count);
-            rx_progress.next();
-            print!("{esc}c", esc = 27 as char);
-        }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
         drop(tx);
+
+        let mut count = self.count;
         for (i, j, time) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.time += time;
+            count -= 1;
+            print_progress(self.count, count);
         }
+
+        self.pool.join();
     }
 
     pub fn update_projs(&mut self) {
         let (tx, rx) = channel();
 
-        let mut handles = vec![];
-
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
+
                 let path = String::from(&self.groups[i].projs[j].path);
                 let tx = Sender::clone(&tx);
-                let handle = thread::spawn(move || {
+                self.pool.execute(move || {
                     let now = Instant::now();
                     let modified = git_is_clean(&path);
                     let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
                     tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis())).unwrap();
                 });
-                handles.push(handle);
             }
         }
 
-        for handle in handles {
-            handle.join().unwrap();
-        }
         drop(tx);
+        self.pool.join();
+
         for (i, j, modified, ahead_behind, time) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.modified = modified;
