@@ -16,6 +16,9 @@ use std::time::Instant;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
+#[macro_use]
+extern crate savefile_derive;
+
 fn usage(program: &str, opts: &Options) {
     let brief = format!("Usage: {} [options]", program);
     print!("{}", opts.usage(&brief));
@@ -132,7 +135,7 @@ fn main() {
     let depth = matches.opt_str("depth").unwrap_or(String::from("2"));
     let depth = depth.parse::<i32>().unwrap_or(2);
 
-    let mut rgs = Rgs::new(code)
+    let mut rgs = Rgs::new(&code)
         .codeignore(codeignore)
         .depth(depth)
         .fetch(fetch)
@@ -141,6 +144,7 @@ fn main() {
         .summary(summary_type);
 
     rgs.run();
+
     let time = now.elapsed();
     if matches.opt_present("time") {
         eprintln!("{}", format!("{}ms", time.as_millis()).black());

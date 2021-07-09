@@ -9,8 +9,13 @@ use std::fs::{File};
 use std::io::{BufRead};
 use crate::print::{OutputType, SummaryType, print_groups, print_progress, SortType};
 use std::sync::mpsc::channel;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, Duration};
 use threadpool::ThreadPool;
+
+extern crate savefile;
+
+use savefile::prelude::*;
+use std::ops::Sub;
 
 pub struct Rgs {
     code: String,
@@ -18,7 +23,7 @@ pub struct Rgs {
     out_types: Vec<OutputType>,
     sort: SortType,
     summary_type: SummaryType,
-    groups: Vec<Group>,
+    pub groups: Vec<Group>,
     fetch: bool,
     count: i32,
     depth: i32,
@@ -26,9 +31,9 @@ pub struct Rgs {
 }
 
 impl Rgs {
-    pub fn new(code: String) -> Rgs {
+    pub fn new(code: &String) -> Rgs {
         Rgs {
-            code,
+            code: String::from(code),
             codeignore: vec![],
             count: 0,
             depth: 2,
@@ -37,23 +42,49 @@ impl Rgs {
             out_types: vec![],
             sort: SortType::Dir,
             summary_type: SummaryType::Default,
-            pool: ThreadPool::new(num_cpus::get())
+            pool: ThreadPool::new(num_cpus::get()),
         }
     }
 
     pub fn run(&mut self) {
-        match self.list_dir(String::from(&self.code).as_str(), self.depth) {
-            Ok(_) => {
-                if self.fetch {
-                    self.fetch_projs();
-                }
-                self.update_projs();
-                self.groups.sort_by(|a, b| a.name.cmp(&b.name));
-                print_groups(&self.groups, &self.summary_type, &self.out_types, &self.sort)
-            }
+        self.load_repos();
+        if self.fetch {
+            self.fetch_projs();
+        }
+        if !self.is_showing_only_all_dirs() {
+            self.update_projs();
+        }
+        self.print();
+    }
 
+    fn is_showing_only_all_dirs(&self) -> bool {
+        self.out_types.contains(&OutputType::Dir) && self.out_types.contains(&OutputType::All)
+    }
+
+    pub fn load_repos(&mut self) {
+        let cache = Path::new(&self.code).join(".codecache");
+        if self.is_showing_only_all_dirs() && cache.exists() {
+            if let Ok(meta) = cache.metadata() {
+                if let Ok(mod_time) = meta.modified() {
+                    if mod_time > SystemTime::now().sub(Duration::from_secs(1800)) {
+                        self.groups = load_file(cache.to_str().unwrap(), 0).unwrap();
+                        return;
+                    }
+                }
+            }
+        }
+
+        match self.list_dir(String::from(&self.code).as_str(), self.depth) {
+            Ok(_) => {}
             Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
         }
+
+        self.groups.sort_by(|a, b| a.name.cmp(&b.name));
+        save_file(cache.to_str().unwrap(), 0, &self.groups).unwrap();
+    }
+
+    pub fn print(&mut self) {
+        print_groups(&self.groups, &self.summary_type, &self.out_types, &self.sort)
     }
 
     pub fn fetch_projs(&mut self) {
@@ -66,7 +97,7 @@ impl Rgs {
                 self.pool.execute(move || {
                     let now = Instant::now();
                     git_fetch(&path);
-                    tx.send((i, j, now.elapsed().as_millis())).unwrap()
+                    tx.send((i, j, now.elapsed().as_millis() as u64)).unwrap()
                 });
             }
         }
@@ -89,14 +120,13 @@ impl Rgs {
 
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
-
                 let path = String::from(&self.groups[i].projs[j].path);
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
                     let modified = git_is_clean(&path);
                     let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
-                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis())).unwrap();
+                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis() as u64)).unwrap();
                 });
             }
         }

@@ -1,14 +1,15 @@
-#[derive(Clone)]
+
+#[derive(Clone, Savefile)]
 pub struct Project {
     pub name: String,
     pub grp_name: String,
     pub path: String,
     pub modified: usize,
-    pub time: u128,
+    pub time: u64,
     pub ahead_behind: (usize, usize),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savefile)]
 pub struct Group {
     pub name: String,
     pub path: String,
