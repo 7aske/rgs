@@ -1,4 +1,6 @@
-use git2::{Repository, Status, Error, BranchType};
+use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks, Cred};
+use std::env;
+use std::path::Path;
 
 pub fn git_is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -35,7 +37,32 @@ fn git_get_current_branch(repo: &Repository) -> Result<String, Error> {
 pub fn git_fetch(path: &str) -> Result<(), Error> {
     let repo = Repository::open(path)?;
     let branch = git_get_current_branch(&repo)?;
-    let res = repo.find_remote("origin")?.fetch(&[branch], None, None); res
+    let mut callbacks = RemoteCallbacks::default();
+    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        let priv_key_path = format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
+        let priv_key = Path::new(&priv_key_path);
+        return if username_from_url.is_some() && priv_key.exists() {
+            Cred::ssh_key(
+                username_from_url.unwrap(),
+                None,
+                priv_key,
+                None,
+            )
+        } else {
+            Cred::default()
+        };
+    });
+    let mut fetch_opts = FetchOptions::default();
+    fetch_opts.remote_callbacks(callbacks);
+    match repo.find_remote("origin").unwrap().fetch(&[String::from(&branch)], Option::Some(&mut fetch_opts), None) {
+        Ok(_) => {
+            eprintln!("fetching {}:{}", path, branch)
+        }
+        Err(_) => {
+            eprintln!("error fetching {}:{}", path, branch)
+        }
+    }
+    Ok(())
 }
 
 pub fn git_ahead_behind(path: &str) -> Result<(usize, usize), Error> {

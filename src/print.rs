@@ -195,15 +195,3 @@ fn very_verbose_print(langs: &Vec<Group>) {
         }
     }
 }
-
-const SPINNER: [char; 4] = ['/', '-', '\\', '|'];
-
-pub fn print_progress(total: i32, current: i32) {
-    let progress = format!("{}\n{}/{}", SPINNER[current as usize % SPINNER.len()], total - current, total).black();
-    println!("{}", progress);
-    print_clear_screen();
-}
-
-pub fn print_clear_screen() {
-    print!("{esc}c", esc = 27 as char);
-}

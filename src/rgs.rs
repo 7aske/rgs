@@ -7,7 +7,7 @@ use mpsc::Sender;
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
 use std::fs::{File};
 use std::io::{BufRead};
-use crate::print::{OutputType, SummaryType, print_groups, print_progress, SortType};
+use crate::print::{OutputType, SummaryType, print_groups, SortType};
 use std::sync::mpsc::channel;
 use std::time::{Instant, SystemTime, Duration};
 use threadpool::ThreadPool;
@@ -104,12 +104,9 @@ impl Rgs {
 
         drop(tx);
 
-        let mut count = self.count;
         for (i, j, time) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.time += time;
-            count -= 1;
-            print_progress(self.count, count);
         }
 
         self.pool.join();
