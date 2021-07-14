@@ -54,7 +54,12 @@ pub fn git_fetch(path: &str) -> Result<(), Error> {
     });
     let mut fetch_opts = FetchOptions::default();
     fetch_opts.remote_callbacks(callbacks);
-    match repo.find_remote("origin").unwrap().fetch(&[String::from(&branch)], Option::Some(&mut fetch_opts), None) {
+    let remote = repo.find_remote("origin");
+    if remote.is_err() {
+        eprintln!("error fetching {}:{} - no remote 'origin'", path, branch);
+        return Err(remote.err().unwrap());
+    }
+    match remote.unwrap().fetch(&[String::from(&branch)], Option::Some(&mut fetch_opts), None) {
         Ok(_) => {
             eprintln!("fetching {}:{}", path, branch)
         }
