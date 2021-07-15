@@ -228,7 +228,7 @@ impl Rgs {
                 // if its a top-level repository (eg. uni)
                 if self.opts.code.as_str() == par_name {
                     self.groups.push(lang);
-                    lang = Group::new(dir_name, path_str);
+                    lang = Group::new("CODE", path_str);
                 } else {
                     let code = Path::new(&self.opts.code);
                     let root = code.join(Path::new(&lang.name));
