@@ -1,5 +1,5 @@
 use getopts::{Matches};
-use glob::Pattern;
+use glob::{Pattern, GlobResult};
 use mpsc::Sender;
 use savefile::prelude::*;
 use std::collections::HashSet;
@@ -26,6 +26,7 @@ extern crate savefile;
 pub struct RgsOpt {
     code: String,
     codeignore: Vec<Pattern>,
+    codeignore_exclude: Vec<Pattern>,
     out_types: Vec<OutputType>,
     sort: SortType,
     summary_type: SummaryType,
@@ -99,21 +100,26 @@ impl TryFrom<&Matches> for RgsOpt {
         }
 
         let no_codeignore = matches.opt_present("no-ignore");
-        let codeignore = if no_codeignore {
-            vec![]
-        } else {
-            match File::open(Path::new(&code).join(".codeignore")) {
-                Ok(file) => {
-                    io::BufReader::new(file)
-                        .lines()
-                        .filter_map(|line| line.ok())
-                        .filter(|line| !line.starts_with("#"))
-                        .map(|line| Pattern::new(line.as_str()).unwrap())
-                        .collect()
+        let mut codeignore = vec![];
+        let mut codeignore_exclude = vec![];
+        match File::open(Path::new(&code).join(".codeignore")) {
+            Ok(file) => {
+                let lines = io::BufReader::new(file)
+                    .lines()
+                    .filter_map(|line| line.ok())
+                    .filter(|line| !line.starts_with("#"))
+                    .collect::<Vec<String>>();
+                for line in lines {
+                    if line.starts_with("!") {
+                        let line = line.chars().skip(1).collect::<String>();
+                        codeignore_exclude.push(Pattern::new(line.as_str()).unwrap());
+                    } else if !no_codeignore {
+                        codeignore.push(Pattern::new(line.as_str()).unwrap());
+                    }
                 }
-                Err(_) => { vec![] }
             }
-        };
+            Err(_) => {}
+        }
 
         let fetch = matches.opt_present("fetch");
 
@@ -133,6 +139,7 @@ impl TryFrom<&Matches> for RgsOpt {
             threads,
             code,
             codeignore,
+            codeignore_exclude,
             out_types: Vec::from_iter(out_types),
             sort,
             summary_type,
@@ -188,9 +195,24 @@ impl Rgs {
             }
         }
 
-        match self.list_dir(String::from(&self.opts.code).as_str(), self.opts.depth) {
+        match self.list_dir(String::from(&self.opts.code), self.opts.depth) {
             Ok(_) => {}
             Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
+        }
+
+        let paths = self.opts.codeignore_exclude
+            .iter()
+            .map(|p| String::from(&self.opts.code) + p.as_str())
+            .map(|p| glob::glob(p.as_str()).unwrap())
+            .flat_map(|g| g.into_iter())
+            .collect::<Vec<GlobResult>>();
+        let paths = paths
+            .iter()
+            .map(|r| r.as_ref().unwrap().to_str().unwrap())
+            .collect::<Vec<&str>>();
+
+        for path in paths {
+            self.process_possible_git_dir(Path::new(path), 1);
         }
 
         self.groups.sort_by(|a, b| a.name.cmp(&b.name));
@@ -254,72 +276,84 @@ impl Rgs {
     }
 
 
-    pub fn list_dir(&mut self, path: &str, depth: i32) -> io::Result<()> {
+    pub fn list_dir(&mut self, path: String, depth: i32) -> io::Result<()> {
         if depth == 0 { return Ok(()); }
 
         for entry in fs::read_dir(path)? {
-            let path = entry?.path();
-            let path_str = path.to_str().unwrap();
-            let replaced = path_str.replace(&self.opts.code, "");
-            let path_root = replaced.as_str();
-
-            if self.opts.codeignore.iter().any(|g| g.matches(path_root)) {
-                continue;
-            }
-
-            if path.is_dir() {
-                let dir_name = path.file_name().unwrap().to_str().unwrap();
-                let par_name = path.parent().unwrap().to_str().unwrap();
-
-                if git_is_inside_work_tree(&path_str) {
-
-                    // check if it is a link
-                    match fs::read_link(path.clone()) {
-                        Ok(res) => {
-                            // if its not an absolute link treat it as an alias
-                            if !res.is_absolute() {
-                                continue;
-                            }
-
-                            // if it is an absolute link within code directory treat it as an alias
-                            if res.starts_with(self.opts.code.as_str()) {
-                                continue;
-                            }
-                        }
-                        Err(_) => {}
-                    }
-
-                    self.count += 1;
-
-                    // last or new
-                    let mut lang = self.groups.pop().unwrap_or(Group::new(dir_name, path_str));
-
-                    // if its a top-level repository (eg. uni)
-                    if self.opts.code.as_str() == par_name {
-                        self.groups.push(lang);
-                        lang = Group::new(dir_name, path_str);
-                    } else {
-                        let code = Path::new(&self.opts.code);
-                        let root = code.join(Path::new(&lang.name));
-                        let root = root.to_str().unwrap();
-                        if root != par_name {
-                            let code_len = code.to_str().unwrap().len() + 1;
-                            let lang_name = &par_name[code_len..];
-                            self.groups.push(lang);
-                            lang = Group::new(&lang_name, path_str);
-                        }
-                    }
-
-                    lang.add_project(Project::new(dir_name, path_str, &lang.name.as_str()));
-                    self.groups.push(lang);
-                } else {
-                    if self.opts.code == par_name {
-                        self.groups.push(Group::new(dir_name, path_str));
-                    }
-                    self.list_dir(path_str, depth - 1)?;
-                }
-            }
+            self.process_possible_git_dir(&entry.unwrap().path(), depth);
         };
         Ok(())
+    }
+
+    fn process_possible_git_dir(&mut self, path: &Path, depth: i32) {
+        let path_str = path.to_str().unwrap();
+        let replaced = path_str.replace(&self.opts.code, "");
+        let path_root = replaced.as_str();
+
+        let mut skip = false;
+        if self.opts.codeignore.iter().any(|g| g.matches(path_root)) {
+            skip = true;
+        }
+
+        if self.opts.codeignore_exclude.iter().any(|g| g.matches(path_root)) {
+            skip = false;
+        }
+
+        if skip {
+            return;
+        }
+
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap().to_str().unwrap();
+            let par_name = path.parent().unwrap().to_str().unwrap();
+
+            if git_is_inside_work_tree(&path_str) {
+
+                // check if it is a link
+                match fs::read_link(path.clone()) {
+                    Ok(res) => {
+                        // if its not an absolute link treat it as an alias
+                        if !res.is_absolute() {
+                            return;
+                        }
+
+                        // if it is an absolute link within code directory treat it as an alias
+                        if res.starts_with(self.opts.code.as_str()) {
+                            return;
+                        }
+                    }
+                    Err(_) => {}
+                }
+
+                self.count += 1;
+
+                // last or new
+                let mut lang = self.groups.pop().unwrap_or(Group::new(dir_name, path_str));
+
+                // if its a top-level repository (eg. uni)
+                if self.opts.code.as_str() == par_name {
+                    self.groups.push(lang);
+                    lang = Group::new(dir_name, path_str);
+                } else {
+                    let code = Path::new(&self.opts.code);
+                    let root = code.join(Path::new(&lang.name));
+                    let root = root.to_str().unwrap();
+                    if root != par_name {
+                        let code_len = code.to_str().unwrap().len() + 1;
+                        let lang_name = &par_name[code_len..];
+                        self.groups.push(lang);
+                        lang = Group::new(&lang_name, path_str);
+                    }
+                }
+
+                lang.add_project(Project::new(dir_name, path_str, &lang.name.as_str()));
+                self.groups.push(lang);
+            } else {
+                if self.opts.code == par_name {
+                    self.groups.push(Group::new(dir_name, path_str));
+                }
+                self.list_dir(path_str.to_string(), depth - 1);
+            }
+        }
     }
 }
