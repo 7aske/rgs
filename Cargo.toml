@@ -8,13 +8,13 @@ edition = "2018"
 
 [dependencies]
 glob = "0.3.0"
-getopts = "0.2.21"
 colored = "2.0.0"
 git2 = "0.13.17"
 threadpool = "1.8.1"
 num_cpus = "1.13.0"
 savefile = "0.8.1"
 savefile-derive = "0.8.1"
+structopt = "0.3.22"
 
 [profile.release]
 opt-level=3

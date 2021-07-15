@@ -1,151 +1,36 @@
-use getopts::{Matches};
-use glob::{Pattern, GlobResult};
+use glob::{GlobResult};
 use mpsc::Sender;
 use savefile::prelude::*;
-use std::collections::HashSet;
-use std::convert::TryFrom;
-use std::fmt::{Display, Formatter};
-use std::fs::{File};
-use std::io::{BufRead};
-use std::iter::FromIterator;
 use std::ops::Sub;
 use std::path::{Path};
 use std::sync::mpsc::channel;
 use std::sync::mpsc;
 use std::time::{Instant, SystemTime, Duration};
-use std::{fs, io, env, fmt};
+use std::{fs, io};
 use threadpool::ThreadPool;
 
 use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
 use crate::lang::{Group, Project};
-use crate::print::{OutputType, SummaryType, print_groups, SortType};
+use crate::print::{OutputType, print_groups};
+use crate::rgs_opt::RgsOpt;
+use std::fmt::{Display, Formatter};
 
 extern crate savefile;
 
 #[derive(Debug)]
-pub struct RgsOpt {
-    code: String,
-    codeignore: Vec<Pattern>,
-    codeignore_exclude: Vec<Pattern>,
-    out_types: Vec<OutputType>,
-    sort: SortType,
-    summary_type: SummaryType,
-    fetch: bool,
-    depth: i32,
-    threads: usize,
-}
-
-#[derive(Debug)]
-pub struct ParseError {
+pub struct RgsError {
     message: String,
 }
 
-impl Display for ParseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ParseError: {}", self.message)
+impl Display for RgsError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rgs: {}", self.message)
     }
 }
 
-impl From<&str> for ParseError {
-    fn from(value: &str) -> Self {
-        ParseError { message: String::from(value) }
-    }
-}
-
-impl TryFrom<&Matches> for RgsOpt {
-    type Error = ParseError;
-
-    fn try_from(matches: &Matches) -> Result<Self, Self::Error> {
-        let summary_type = SummaryType::from_occurrences(matches.opt_count("verbose") as u64);
-
-        let code = match matches.opt_str("code") {
-            Some(code) => code,
-            None => match env::var("CODE") {
-                Ok(val) => val,
-                Err(_) => {
-                    return Err(ParseError::from("'CODE' env variable not set"));
-                }
-            }
-        };
-
-        let mut out_types: HashSet<OutputType> = HashSet::new();
-        if matches.opt_present("all") {
-            out_types.insert(OutputType::All);
-        }
-
-        if matches.opt_present("time") {
-            out_types.insert(OutputType::Time);
-        }
-
-        if matches.opt_present("modification") {
-            out_types.insert(OutputType::Modification);
-        }
-
-        if matches.opt_present("dir") {
-            out_types.insert(OutputType::Dir);
-            out_types.retain(|x| *x != OutputType::Modification && *x != OutputType::Time);
-        }
-
-        let mut sort = SortType::None;
-        if matches.opt_present("sort") {
-            sort = SortType::from(&matches.opt_str("sort").unwrap());
-
-            if sort == SortType::Time {
-                out_types.insert(OutputType::Time);
-            }
-
-            if sort == SortType::Mod {
-                out_types.insert(OutputType::Modification);
-            }
-        }
-
-        let no_codeignore = matches.opt_present("no-ignore");
-        let mut codeignore = vec![];
-        let mut codeignore_exclude = vec![];
-        match File::open(Path::new(&code).join(".codeignore")) {
-            Ok(file) => {
-                let lines = io::BufReader::new(file)
-                    .lines()
-                    .filter_map(|line| line.ok())
-                    .filter(|line| !line.starts_with("#"))
-                    .collect::<Vec<String>>();
-                for line in lines {
-                    if line.starts_with("!") {
-                        let line = line.chars().skip(1).collect::<String>();
-                        codeignore_exclude.push(Pattern::new(line.as_str()).unwrap());
-                    } else if !no_codeignore {
-                        codeignore.push(Pattern::new(line.as_str()).unwrap());
-                    }
-                }
-            }
-            Err(_) => {}
-        }
-
-        let fetch = matches.opt_present("fetch");
-
-        let depth = matches.opt_get_default("depth", String::from("2"))
-            .unwrap()
-            .parse::<i32>().unwrap();
-
-        let threads = if matches.opt_present("jobs") {
-            matches.opt_str("jobs")
-                .unwrap()
-                .parse::<usize>().unwrap_or(num_cpus::get())
-        } else {
-            num_cpus::get()
-        };
-
-        Ok(RgsOpt {
-            threads,
-            code,
-            codeignore,
-            codeignore_exclude,
-            out_types: Vec::from_iter(out_types),
-            sort,
-            summary_type,
-            fetch,
-            depth,
-        })
+impl From<&str> for RgsError {
+    fn from(val: &str) -> Self {
+        RgsError { message: String::from(val) }
     }
 }
 
@@ -167,7 +52,15 @@ impl Rgs {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), RgsError> {
+        if self.opts.code.is_empty() {
+            return Err(RgsError::from("'CODE' env variable is not set"));
+        }
+
+        if !Path::new(&self.opts.code).exists() {
+            return Err(RgsError::from(format!("{}: no such file or directory", self.opts.code).as_str()));
+        }
+
         self.load_repos();
         if self.opts.fetch {
             self.fetch_projs();
@@ -176,8 +69,10 @@ impl Rgs {
             self.update_projs();
         }
         self.print();
+        Ok(())
     }
 
+    #[inline]
     fn is_showing_only_all_dirs(&self) -> bool {
         self.opts.out_types.contains(&OutputType::Dir) && self.opts.out_types.contains(&OutputType::All)
     }
@@ -276,7 +171,7 @@ impl Rgs {
     }
 
 
-    pub fn list_dir(&mut self, path: String, depth: i32) -> io::Result<()> {
+    pub fn list_dir(&mut self, path: String, depth: usize) -> io::Result<()> {
         if depth == 0 { return Ok(()); }
 
         for entry in fs::read_dir(path)? {
@@ -285,7 +180,7 @@ impl Rgs {
         Ok(())
     }
 
-    fn process_possible_git_dir(&mut self, path: &Path, depth: i32) {
+    fn process_possible_git_dir(&mut self, path: &Path, depth: usize) {
         let path_str = path.to_str().unwrap();
         let replaced = path_str.replace(&self.opts.code, "");
         let path_root = replaced.as_str();

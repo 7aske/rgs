@@ -3,8 +3,9 @@ use std::cmp::Ordering;
 use std::str::FromStr;
 
 use crate::lang::{Project, Group};
+use std::fmt::{Display, Formatter};
 
-#[derive(Eq, PartialEq, Debug, Hash)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
 pub enum OutputType {
     All,
     Dir,
@@ -33,7 +34,7 @@ impl FromStr for OutputType {
 }
 // @formatter:on
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum SummaryType {
     Default,
     Verbose,
@@ -50,7 +51,13 @@ impl SummaryType {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+impl Default for SummaryType {
+    fn default() -> Self {
+        SummaryType::Default
+    }
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum SortType {
     None,
     Dir,
@@ -58,8 +65,8 @@ pub enum SortType {
     Mod,
     AheadBehind,
 }
-
 // @formatter:off
+
 impl FromStr for SortType {
     type Err = ();
 
@@ -75,13 +82,32 @@ impl FromStr for SortType {
     }
 }
 
+// @formatter:on
+
+impl From<&str> for SortType {
+    fn from(string: &str) -> Self {
+        Self::from_str(string).unwrap()
+    }
+}
+
 impl From<&String> for SortType {
     fn from(string: &String) -> Self{
         Self::from_str(string.as_str()).unwrap()
     }
+}
+
+impl Default for SortType {
+    fn default() -> Self {
+        SortType::None
+    }
+}
+
+impl Display for SortType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result{
+        write!(f, "{}", self.to_string())
+    }
 
 }
-// @formatter:on
 
 
 const COLOR_DIRTY: &str = "yellow";
