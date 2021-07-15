@@ -47,6 +47,7 @@ fn main() {
     opts.optflag("t", "time", "show time elapsed per project");
     opts.optflag("m", "modification", "show modifications or ahead/behind status");
     opts.optopt("s", "sort", "sort by: directory (d), modifications (m), time (t), ahead-behind (a)", "SORT");
+    opts.optopt("j", "jobs", "number of threads, default: number of logical cpus", "THREADS");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,

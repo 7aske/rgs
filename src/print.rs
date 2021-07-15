@@ -1,7 +1,8 @@
-use crate::lang::{Project, Group};
 use colored::*;
 use std::cmp::Ordering;
 use std::str::FromStr;
+
+use crate::lang::{Project, Group};
 
 #[derive(Eq, PartialEq, Debug, Hash)]
 pub enum OutputType {

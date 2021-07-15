@@ -1,26 +1,26 @@
-use crate::lang::{Group, Project};
-use std::{fs, io, env, fmt};
-use glob::Pattern;
-use std::path::{Path};
-use std::sync::mpsc;
-use mpsc::Sender;
-use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
-use std::fs::{File};
-use std::io::{BufRead};
-use crate::print::{OutputType, SummaryType, print_groups, SortType};
-use std::sync::mpsc::channel;
-use std::time::{Instant, SystemTime, Duration};
-use threadpool::ThreadPool;
-
-extern crate savefile;
-
-use savefile::prelude::*;
-use std::ops::Sub;
 use getopts::{Matches};
+use glob::Pattern;
+use mpsc::Sender;
+use savefile::prelude::*;
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::convert::TryFrom;
 use std::fmt::{Display, Formatter};
+use std::fs::{File};
+use std::io::{BufRead};
+use std::iter::FromIterator;
+use std::ops::Sub;
+use std::path::{Path};
+use std::sync::mpsc::channel;
+use std::sync::mpsc;
+use std::time::{Instant, SystemTime, Duration};
+use std::{fs, io, env, fmt};
+use threadpool::ThreadPool;
+
+use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
+use crate::lang::{Group, Project};
+use crate::print::{OutputType, SummaryType, print_groups, SortType};
+
+extern crate savefile;
 
 #[derive(Debug)]
 pub struct RgsOpt {
@@ -31,6 +31,7 @@ pub struct RgsOpt {
     summary_type: SummaryType,
     fetch: bool,
     depth: i32,
+    threads: usize,
 }
 
 #[derive(Debug)]
@@ -120,7 +121,16 @@ impl TryFrom<&Matches> for RgsOpt {
             .unwrap()
             .parse::<i32>().unwrap();
 
+        let threads = if matches.opt_present("jobs") {
+            matches.opt_str("jobs")
+                .unwrap()
+                .parse::<usize>().unwrap_or(num_cpus::get())
+        } else {
+            num_cpus::get()
+        };
+
         Ok(RgsOpt {
+            threads,
             code,
             codeignore,
             out_types: Vec::from_iter(out_types),
@@ -141,11 +151,12 @@ pub struct Rgs {
 
 impl Rgs {
     pub fn new(opts: RgsOpt) -> Rgs {
+        let threads = opts.threads;
         Rgs {
             opts,
             count: 0,
             groups: vec![],
-            pool: ThreadPool::new(num_cpus::get()),
+            pool: ThreadPool::new(threads),
         }
     }
 
