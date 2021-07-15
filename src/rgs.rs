@@ -1,5 +1,5 @@
 use crate::lang::{Group, Project};
-use std::{fs, io};
+use std::{fs, io, env, fmt};
 use glob::Pattern;
 use std::path::{Path};
 use std::sync::mpsc;
@@ -16,39 +16,142 @@ extern crate savefile;
 
 use savefile::prelude::*;
 use std::ops::Sub;
+use getopts::{Matches};
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use std::convert::TryFrom;
+use std::fmt::{Display, Formatter};
 
-pub struct Rgs {
+#[derive(Debug)]
+pub struct RgsOpt {
     code: String,
     codeignore: Vec<Pattern>,
     out_types: Vec<OutputType>,
     sort: SortType,
     summary_type: SummaryType,
-    pub groups: Vec<Group>,
     fetch: bool,
-    count: i32,
     depth: i32,
+}
+
+#[derive(Debug)]
+pub struct ParseError {
+    message: String,
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "ParseError: {}", self.message)
+    }
+}
+
+impl From<&str> for ParseError {
+    fn from(value: &str) -> Self {
+        ParseError { message: String::from(value) }
+    }
+}
+
+impl TryFrom<&Matches> for RgsOpt {
+    type Error = ParseError;
+
+    fn try_from(matches: &Matches) -> Result<Self, Self::Error> {
+        let summary_type = SummaryType::from_occurrences(matches.opt_count("verbose") as u64);
+
+        let code = match matches.opt_str("code") {
+            Some(code) => code,
+            None => match env::var("CODE") {
+                Ok(val) => val,
+                Err(_) => {
+                    return Err(ParseError::from("'CODE' env variable not set"));
+                }
+            }
+        };
+
+        let mut out_types: HashSet<OutputType> = HashSet::new();
+        if matches.opt_present("all") {
+            out_types.insert(OutputType::All);
+        }
+
+        if matches.opt_present("time") {
+            out_types.insert(OutputType::Time);
+        }
+
+        if matches.opt_present("modification") {
+            out_types.insert(OutputType::Modification);
+        }
+
+        if matches.opt_present("dir") {
+            out_types.insert(OutputType::Dir);
+            out_types.retain(|x| *x != OutputType::Modification && *x != OutputType::Time);
+        }
+
+        let mut sort = SortType::None;
+        if matches.opt_present("sort") {
+            sort = SortType::from(&matches.opt_str("sort").unwrap());
+
+            if sort == SortType::Time {
+                out_types.insert(OutputType::Time);
+            }
+
+            if sort == SortType::Mod {
+                out_types.insert(OutputType::Modification);
+            }
+        }
+
+        let no_codeignore = matches.opt_present("no-ignore");
+        let codeignore = if no_codeignore {
+            vec![]
+        } else {
+            match File::open(Path::new(&code).join(".codeignore")) {
+                Ok(file) => {
+                    io::BufReader::new(file)
+                        .lines()
+                        .filter_map(|line| line.ok())
+                        .filter(|line| !line.starts_with("#"))
+                        .map(|line| Pattern::new(line.as_str()).unwrap())
+                        .collect()
+                }
+                Err(_) => { vec![] }
+            }
+        };
+
+        let fetch = matches.opt_present("fetch");
+
+        let depth = matches.opt_get_default("depth", String::from("2"))
+            .unwrap()
+            .parse::<i32>().unwrap();
+
+        Ok(RgsOpt {
+            code,
+            codeignore,
+            out_types: Vec::from_iter(out_types),
+            sort,
+            summary_type,
+            fetch,
+            depth,
+        })
+    }
+}
+
+pub struct Rgs {
+    opts: RgsOpt,
+    groups: Vec<Group>,
+    count: i32,
     pool: ThreadPool,
 }
 
 impl Rgs {
-    pub fn new(code: &String) -> Rgs {
+    pub fn new(opts: RgsOpt) -> Rgs {
         Rgs {
-            code: String::from(code),
-            codeignore: vec![],
+            opts,
             count: 0,
-            depth: 2,
-            fetch: false,
             groups: vec![],
-            out_types: vec![],
-            sort: SortType::Dir,
-            summary_type: SummaryType::Default,
             pool: ThreadPool::new(num_cpus::get()),
         }
     }
 
     pub fn run(&mut self) {
         self.load_repos();
-        if self.fetch {
+        if self.opts.fetch {
             self.fetch_projs();
         }
         if !self.is_showing_only_all_dirs() {
@@ -58,11 +161,11 @@ impl Rgs {
     }
 
     fn is_showing_only_all_dirs(&self) -> bool {
-        self.out_types.contains(&OutputType::Dir) && self.out_types.contains(&OutputType::All)
+        self.opts.out_types.contains(&OutputType::Dir) && self.opts.out_types.contains(&OutputType::All)
     }
 
     pub fn load_repos(&mut self) {
-        let cache = Path::new(&self.code).join(".codecache");
+        let cache = Path::new(&self.opts.code).join(".codecache");
         if self.is_showing_only_all_dirs() && cache.exists() {
             if let Ok(meta) = cache.metadata() {
                 if let Ok(mod_time) = meta.modified() {
@@ -74,7 +177,7 @@ impl Rgs {
             }
         }
 
-        match self.list_dir(String::from(&self.code).as_str(), self.depth) {
+        match self.list_dir(String::from(&self.opts.code).as_str(), self.opts.depth) {
             Ok(_) => {}
             Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
         }
@@ -84,7 +187,7 @@ impl Rgs {
     }
 
     pub fn print(&mut self) {
-        print_groups(&self.groups, &self.summary_type, &self.out_types, &self.sort)
+        print_groups(&self.groups, &self.opts.summary_type, &self.opts.out_types, &self.opts.sort)
     }
 
     pub fn fetch_projs(&mut self) {
@@ -146,10 +249,10 @@ impl Rgs {
         for entry in fs::read_dir(path)? {
             let path = entry?.path();
             let path_str = path.to_str().unwrap();
-            let replaced = path_str.replace(&self.code, "");
+            let replaced = path_str.replace(&self.opts.code, "");
             let path_root = replaced.as_str();
 
-            if self.codeignore.iter().any(|g| g.matches(path_root)) {
+            if self.opts.codeignore.iter().any(|g| g.matches(path_root)) {
                 continue;
             }
 
@@ -168,7 +271,7 @@ impl Rgs {
                             }
 
                             // if it is an absolute link within code directory treat it as an alias
-                            if res.starts_with(self.code.as_str()) {
+                            if res.starts_with(self.opts.code.as_str()) {
                                 continue;
                             }
                         }
@@ -181,11 +284,11 @@ impl Rgs {
                     let mut lang = self.groups.pop().unwrap_or(Group::new(dir_name, path_str));
 
                     // if its a top-level repository (eg. uni)
-                    if self.code.as_str() == par_name {
+                    if self.opts.code.as_str() == par_name {
                         self.groups.push(lang);
                         lang = Group::new(dir_name, path_str);
                     } else {
-                        let code = Path::new(&self.code);
+                        let code = Path::new(&self.opts.code);
                         let root = code.join(Path::new(&lang.name));
                         let root = root.to_str().unwrap();
                         if root != par_name {
@@ -199,7 +302,7 @@ impl Rgs {
                     lang.add_project(Project::new(dir_name, path_str, &lang.name.as_str()));
                     self.groups.push(lang);
                 } else {
-                    if self.code == par_name {
+                    if self.opts.code == par_name {
                         self.groups.push(Group::new(dir_name, path_str));
                     }
                     self.list_dir(path_str, depth - 1)?;
@@ -207,51 +310,5 @@ impl Rgs {
             }
         };
         Ok(())
-    }
-
-    pub fn sort(mut self, sort: SortType) -> Self {
-        self.sort = sort;
-        self
-    }
-
-    pub fn fetch(mut self, fetch: bool) -> Self {
-        self.fetch = fetch;
-        self
-    }
-
-    pub fn out_types(mut self, out_types: Vec<OutputType>) -> Self {
-        self.out_types = out_types;
-        self
-    }
-
-    pub fn summary(mut self, summary: SummaryType) -> Self {
-        self.summary_type = summary;
-        self
-    }
-
-    pub fn depth(mut self, depth: i32) -> Self {
-        self.depth = depth;
-        self
-    }
-
-
-    pub fn codeignore(mut self, codeignore: bool) -> Self {
-        if !codeignore {
-            return self;
-        }
-
-        self.codeignore = match File::open(Path::new(&self.code).join(".codeignore")) {
-            Ok(file) => {
-                io::BufReader::new(file)
-                    .lines()
-                    .filter_map(|line| line.ok())
-                    .filter(|line| !line.starts_with("#"))
-                    .map(|line| Pattern::new(line.as_str()).unwrap())
-                    .collect()
-            }
-            Err(_) => { vec![] }
-        };
-
-        self
     }
 }

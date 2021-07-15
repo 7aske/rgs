@@ -1,6 +1,7 @@
 use crate::lang::{Project, Group};
 use colored::*;
 use std::cmp::Ordering;
+use std::str::FromStr;
 
 #[derive(Eq, PartialEq, Debug, Hash)]
 pub enum OutputType {
@@ -10,11 +11,42 @@ pub enum OutputType {
     Modification,
 }
 
+// @formatter:off
+impl FromStr for OutputType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err>{
+        let res = match s {
+            "dir"                  | "d" => Option::Some(OutputType::Dir),
+            "modification" | "mod" | "m" => Option::Some(OutputType::Modification),
+            "time"                 | "t" => Option::Some(OutputType::Time),
+            "all"                        => Option::Some(OutputType::All),
+            _ => Option::None
+        };
+
+        match res {
+            None => Err(()),
+            Some(res) => Ok(res)
+        }
+    }
+}
+// @formatter:on
+
 #[derive(Eq, PartialEq, Debug)]
 pub enum SummaryType {
     Default,
     Verbose,
     VeryVerbose,
+}
+
+impl SummaryType {
+    pub fn from_occurrences(num: u64) -> Self {
+        match num {
+            1 => SummaryType::Verbose,
+            2 => SummaryType::VeryVerbose,
+            _ => SummaryType::Default,
+        }
+    }
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -25,6 +57,30 @@ pub enum SortType {
     Mod,
     AheadBehind,
 }
+
+// @formatter:off
+impl FromStr for SortType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sort = match s {
+            "modifications" | "mod" | "m" => SortType::Mod,
+            "time"                  | "t" => SortType::Time,
+            "ahead-behind"  | "ab"  | "a" => SortType::AheadBehind,
+            "directory"     | "dir" | "d" => SortType::Dir,
+            _                             => SortType::None,
+        };
+        Result::Ok(sort)
+    }
+}
+
+impl From<&String> for SortType {
+    fn from(string: &String) -> Self{
+        Self::from_str(string.as_str()).unwrap()
+    }
+
+}
+// @formatter:on
 
 
 const COLOR_DIRTY: &str = "yellow";
