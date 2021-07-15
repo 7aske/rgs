@@ -231,24 +231,22 @@ fn very_verbose_print(langs: &Vec<Group>) {
             println!("├──{} {}", l.name.color(COLOR_FG), format!("({})", l.projs.len()).black());
         }
         for (j, p) in &mut l.projs.iter().enumerate() {
-            let mut out = String::from("");
-
             if i == langs.len() - 1 {
-                out += "   "
+                print!("   ");
             } else {
-                out += "|  "
+                print!("|  ");
             }
             if j == l.projs.len() - 1 {
-                out += "└──"
+                print!("└──");
             } else {
-                out += "├──"
+                print!("├──");
             }
-            if p.modified > 0 {
-                out += format!("{}", p.name.color(COLOR_CLEAN)).as_str();
+            if p.is_clean() {
+                print!("{}", p.name.color(COLOR_CLEAN));
             } else {
-                out += format!("{}  *", p.name.color(COLOR_DIRTY).bold()).as_str();
+                print!("{}  *", p.name.color(COLOR_DIRTY).bold());
             }
-            println!("{}", out);
+            println!();
         }
     }
 }
