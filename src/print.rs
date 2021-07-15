@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use crate::lang::{Project, Group};
 use std::fmt::{Display, Formatter};
+use serde_derive::Deserialize;
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
 pub enum OutputType {
@@ -57,7 +58,7 @@ impl Default for SummaryType {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Deserialize)]
 pub enum SortType {
     None,
     Dir,
@@ -65,8 +66,8 @@ pub enum SortType {
     Mod,
     AheadBehind,
 }
-// @formatter:off
 
+// @formatter:off
 impl FromStr for SortType {
     type Err = ();
 
@@ -91,7 +92,7 @@ impl From<&str> for SortType {
 }
 
 impl From<&String> for SortType {
-    fn from(string: &String) -> Self{
+    fn from(string: &String) -> Self {
         Self::from_str(string.as_str()).unwrap()
     }
 }
@@ -103,10 +104,9 @@ impl Default for SortType {
 }
 
 impl Display for SortType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
     }
-
 }
 
 

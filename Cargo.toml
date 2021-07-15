@@ -15,6 +15,9 @@ num_cpus = "1.13.0"
 savefile = "0.8.1"
 savefile-derive = "0.8.1"
 structopt = "0.3.22"
+serde = "1.0.126"
+serde_derive = "1.0.126"
+toml = "0.5.8"
 
 [profile.release]
 opt-level=3

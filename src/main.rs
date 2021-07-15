@@ -18,9 +18,10 @@ use std::process;
 extern crate savefile_derive;
 
 fn main() {
-    let opt: RgsOptStruct = RgsOptStruct::from_args();
+    let mut opt: RgsOptStruct = RgsOptStruct::from_args();
     let now = Instant::now();
 
+    opt.load_profile();
     let rgs_opt = RgsOpt::from(&opt);
     let mut rgs = Rgs::new(rgs_opt);
     match rgs.run() {
