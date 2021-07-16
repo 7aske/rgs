@@ -26,7 +26,7 @@ pub struct RgsOptStruct {
     pub code: String,
     #[structopt(short = "v", long = "verbose", parse(from_occurrences), help = "print additional information")]
     pub verbose: u8,
-    #[structopt(short = "i", long = "no-ignore", help = "don't raed .codeignore file")]
+    #[structopt(short = "i", long = "no-ignore", help = "don't read .codeignore file")]
     pub no_ignore: bool,
     #[structopt(short = "s", long = "sort", parse(from_str), help = "sort by: directory (d), modifications (m), time (t), ahead-behind (a)")]
     pub sort: Option<SortType>,
