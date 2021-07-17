@@ -24,6 +24,7 @@ fn main() {
     opt.load_profile();
     let rgs_opt = RgsOpt::from(&opt);
     let mut rgs = Rgs::new(rgs_opt);
+
     match rgs.run() {
         Ok(_) => {}
         Err(err) => {

@@ -6,14 +6,16 @@ use std::path::{Path};
 use std::sync::mpsc::channel;
 use std::sync::mpsc;
 use std::time::{Instant, SystemTime, Duration};
-use std::{fs, io};
+use std::{fs, io, thread, process};
 use threadpool::ThreadPool;
 
-use crate::git::{git_is_clean, git_is_inside_work_tree, git_fetch, git_ahead_behind};
 use crate::lang::{Group, Project};
 use crate::print::{OutputType, print_groups};
 use crate::rgs_opt::RgsOpt;
 use std::fmt::{Display, Formatter};
+use chrono::{NaiveDateTime};
+use notify_rust::{Notification, Urgency};
+use crate::git;
 
 extern crate savefile;
 
@@ -24,7 +26,7 @@ pub struct RgsError {
 
 impl Display for RgsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rgs: {}", self.message)
+        write!(f, "cgs: {}", self.message)
     }
 }
 
@@ -52,7 +54,7 @@ impl Rgs {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), RgsError> {
+    fn validate_code(&self) -> Result<(), RgsError> {
         if self.opts.code.is_empty() {
             return Err(RgsError::from("'CODE' env variable is not set"));
         }
@@ -60,16 +62,100 @@ impl Rgs {
         if !Path::new(&self.opts.code).exists() {
             return Err(RgsError::from(format!("{}: no such file or directory", self.opts.code).as_str()));
         }
-
-        self.load_repos();
-        if self.opts.fetch {
-            self.fetch_projs();
-        }
-        if !self.is_showing_only_all_dirs() {
-            self.update_projs();
-        }
-        self.print();
         Ok(())
+    }
+
+    pub fn run(&mut self) -> Result<(), RgsError> {
+        self.validate_code()?;
+        if self.opts.watch {
+            self.run_watch()?
+        } else {
+            self.load_repos();
+            if self.opts.fetch {
+                self.fetch_projs();
+            }
+            if !self.is_showing_only_all_dirs() {
+                self.update_projs();
+            }
+            self.print();
+        }
+        Ok(())
+    }
+
+    fn run_watch(&mut self) -> Result<(), RgsError> {
+        const SUMMARY_ABBR_LEN: usize = 60;
+        const MAX_COMMITS_BODY: usize = 10;
+
+        // check only once if there is an invalid repository
+        for repo in &self.opts.repos {
+            if !git::is_inside_work_tree(&repo.to_str().unwrap()) {
+                return Err(RgsError::from(format!("'{}': not a valid repository", repo.to_str().unwrap()).as_str()));
+            }
+        }
+
+        loop {
+            for repo in &self.opts.repos {
+                let fetch = git::fetch(repo.to_str().unwrap());
+                let branch = git::current_branch_from_path(repo).unwrap_or_default();
+                println!("{}:{}\n", repo.to_str().unwrap(), branch);
+                if fetch.is_ok() {
+                    let commits_opt = git::behind_commits(&repo.to_str().unwrap());
+                    match commits_opt {
+                        Ok(commits) => {
+                            if !commits.is_empty() {
+                                let commits_len = commits.len();
+                                let mut notify_body = String::from(format!("{}:{} ({})\n\n", repo.to_str().unwrap(), branch, commits_len));
+                                let mut processed_commits = 0;
+                                for commit in commits {
+                                    if processed_commits < MAX_COMMITS_BODY {
+                                        let time = NaiveDateTime::from_timestamp(commit.time.seconds(), 0);
+                                        println!("{}\n{}\n{} @ {}\n", commit.id, commit.summary, commit.author, time.format("%Y-%m-%d %H:%M:%S"));
+                                        let commit_abbr: String = commit.id.chars().take(8).collect();
+                                        let summary_abbr: String = commit.summary.chars().take(SUMMARY_ABBR_LEN).collect();
+                                        let dots = if commit.summary.len() > SUMMARY_ABBR_LEN {
+                                            "..."
+                                        } else {
+                                            ""
+                                        };
+
+                                        notify_body += format!("{} {}{}\n", commit_abbr, summary_abbr, dots).as_str();
+                                        processed_commits += 1;
+                                    } else if processed_commits == MAX_COMMITS_BODY {
+                                        let more_commits_msg = format!("\n{} more commit(s)...", commits_len - processed_commits);
+                                        notify_body += more_commits_msg.as_str();
+                                        println!("{}", more_commits_msg);
+                                        processed_commits += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+
+                                if self.opts.notify {
+                                    match Notification::new()
+                                        .summary("cgs watch")
+                                        .urgency(Urgency::Low)
+                                        .body(notify_body.as_str())
+                                        .icon("git")
+                                        .show() {
+                                        Ok(_) => {}
+                                        Err(err) => { eprintln!("cgs: {}: unable to show notification", err) }
+                                    }
+                                }
+
+                                if self.opts.exit {
+                                    process::exit(commits_len as i32);
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                } else if !fetch.is_ok() && self.opts.repos.len() == 1 {
+                    return Err(RgsError::from(fetch.unwrap_err().message()));
+                }
+            }
+
+            thread::sleep(Duration::from_secs(self.opts.timeout));
+        }
     }
 
     #[inline]
@@ -92,7 +178,7 @@ impl Rgs {
 
         match self.list_dir(String::from(&self.opts.code), self.opts.depth) {
             Ok(_) => {}
-            Err(err) => { eprintln!("rgs: error: {}", err.to_string()) }
+            Err(err) => { eprintln!("cgs: error: {}", err.to_string()) }
         }
 
         let paths = self.opts.codeignore_exclude
@@ -127,7 +213,7 @@ impl Rgs {
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    git_fetch(&path);
+                    git::fetch(&path);
                     tx.send((i, j, now.elapsed().as_millis() as u64)).unwrap()
                 });
             }
@@ -152,8 +238,8 @@ impl Rgs {
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    let modified = git_is_clean(&path);
-                    let ahead_behind = git_ahead_behind(&path).unwrap_or((0, 0));
+                    let modified = git::is_clean(&path);
+                    let ahead_behind = git::ahead_behind(&path).unwrap_or((0, 0));
                     tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis() as u64)).unwrap();
                 });
             }
@@ -202,7 +288,7 @@ impl Rgs {
             let dir_name = path.file_name().unwrap().to_str().unwrap();
             let par_name = path.parent().unwrap().to_str().unwrap();
 
-            if git_is_inside_work_tree(&path_str) {
+            if git::is_inside_work_tree(&path_str) {
 
                 // check if it is a link
                 match fs::read_link(path.clone()) {

@@ -3,7 +3,7 @@ use crate::print::{OutputType, SortType, SummaryType};
 use std::{io, env};
 use std::collections::HashSet;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::iter::FromIterator;
 use std::io::{BufRead, Read};
 use structopt::StructOpt;
@@ -48,6 +48,27 @@ pub struct RgsOptStruct {
     pub dir: bool,
     #[structopt(short = "m", long = "mod", help = "show modifications or ahead/behind status")]
     pub modification: bool,
+
+    #[structopt(flatten)]
+    pub watch_options: RgsWatchOptStruct,
+}
+
+#[derive(StructOpt, Debug, Deserialize)]
+pub struct RgsWatchOptStruct {
+    #[structopt(long = "watch", short = "w", help = "watch for changes")]
+    pub watch: bool,
+
+    #[structopt(name = "REPOS", required_if("watch", "true"), help = "list of repositories to watch")]
+    pub repos: Vec<String>,
+
+    #[structopt(short = "T", long = "timeout", default_value = "60", help = "timeout in seconds between git fetches")]
+    pub timeout: u64,
+
+    #[structopt(short = "e", long = "exit", help = "exit on first non-zero repository ahead-behind diff")]
+    pub exit: bool,
+
+    #[structopt(short = "-n", long = "notify", help = "send an OS notification on every non-zero diff")]
+    pub notify: bool,
 }
 
 
@@ -111,7 +132,7 @@ impl RgsOptStruct {
             let config = config.get(profile).unwrap().as_table().unwrap();
             self.update_with(config);
         } else {
-            eprintln!("rgs: profile '{}' not found", profile);
+            eprintln!("cgs: profile '{}' not found", profile);
         }
     }
 }
@@ -126,6 +147,12 @@ pub struct RgsOpt {
     pub fetch: bool,
     pub depth: usize,
     pub threads: usize,
+
+    pub watch: bool,
+    pub repos: Vec<PathBuf>,
+    pub timeout: u64,
+    pub exit: bool,
+    pub notify: bool,
 }
 
 #[inline(always)]
@@ -186,6 +213,23 @@ impl From<&RgsOptStruct> for RgsOpt {
         let threads = opt.threads.unwrap_or(num_cpus::get());
         let summary_type = SummaryType::from_occurrences(opt.verbose as u64);
 
+        let watch = opt.watch_options.watch;
+        let repos = opt.watch_options.repos.clone().iter()
+            .map(|repo| {
+                let repo_path = PathBuf::from(repo);
+
+                return if repo_path.is_absolute() {
+                    repo_path
+                } else {
+                    Path::new(&code).join(Path::new(repo))
+                };
+            })
+            .collect::<Vec<PathBuf>>();
+
+        let timeout = opt.watch_options.timeout;
+        let exit = opt.watch_options.exit;
+        let notify = opt.watch_options.notify;
+
         RgsOpt {
             code,
             codeignore,
@@ -196,6 +240,11 @@ impl From<&RgsOptStruct> for RgsOpt {
             fetch,
             depth,
             threads,
+            watch,
+            repos,
+            timeout,
+            exit,
+            notify,
         }
     }
 }

@@ -1,8 +1,8 @@
-use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks, Cred};
+use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks, Cred, Revspec, Oid, Sort, Commit, Time};
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub fn git_is_clean(path: &str) -> usize {
+pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
         Ok(repo) => {
             let statuses = repo.statuses(None).unwrap();
@@ -13,14 +13,14 @@ pub fn git_is_clean(path: &str) -> usize {
 }
 
 
-pub fn git_is_inside_work_tree(path: &str) -> bool {
+pub fn is_inside_work_tree(path: &str) -> bool {
     return match Repository::open(path) {
         Ok(_) => true,
         Err(_) => false
     };
 }
 
-fn git_get_current_branch(repo: &Repository) -> Result<String, Error> {
+fn current_branch(repo: &Repository) -> Result<String, Error> {
     let branch = repo.branches(Option::from(BranchType::Local))?
         .into_iter()
         .map(|b| b.unwrap().0)
@@ -31,12 +31,17 @@ fn git_get_current_branch(repo: &Repository) -> Result<String, Error> {
         let branch = String::from(branch);
         return Ok(branch);
     }
-    return Err(Error::from_str("error"));
+    return Err(Error::from_str("error parsing current branch"));
 }
 
-pub fn git_fetch(path: &str) -> Result<(), Error> {
+pub fn current_branch_from_path(path: &PathBuf) -> Result<String, Error> {
     let repo = Repository::open(path)?;
-    let branch = git_get_current_branch(&repo)?;
+    current_branch(&repo)
+}
+
+pub fn fetch(path: &str) -> Result<(), Error> {
+    let repo = Repository::open(path)?;
+    let branch = current_branch(&repo)?;
     let mut callbacks = RemoteCallbacks::default();
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
         let priv_key_path = format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
@@ -56,8 +61,9 @@ pub fn git_fetch(path: &str) -> Result<(), Error> {
     fetch_opts.remote_callbacks(callbacks);
     let remote = repo.find_remote("origin");
     if remote.is_err() {
-        eprintln!("error fetching {}:{} - no remote 'origin'", path, branch);
-        return Err(remote.err().unwrap());
+        let err_msg = format!("error fetching {}:{} - no remote 'origin'", path, branch);
+        eprintln!("{}", err_msg);
+        return Err(Error::from_str(err_msg.as_str()));
     }
     match remote.unwrap().fetch(&[String::from(&branch)], Option::Some(&mut fetch_opts), None) {
         Ok(_) => {
@@ -70,10 +76,53 @@ pub fn git_fetch(path: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn git_ahead_behind(path: &str) -> Result<(usize, usize), Error> {
+#[inline(always)]
+fn rev_from_to(rev: &Revspec) -> (Oid, Oid) {
+    (rev.from().unwrap().id(), rev.to().unwrap().id())
+}
+
+pub fn ahead_behind(path: &str) -> Result<(usize, usize), Error> {
     let repo = Repository::open(path)?;
-    let branch = git_get_current_branch(&repo)?;
+    let branch = current_branch(&repo)?;
     let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
-    let res = repo.graph_ahead_behind(rev.from().unwrap().id(), rev.to().unwrap().id())?;
+    let (from, to) = rev_from_to(&rev);
+    let res = repo.graph_ahead_behind(from, to)?;
+
     Ok(res)
+}
+
+pub struct CommitInfo {
+    pub summary: String,
+    pub author: String,
+    pub id: String,
+    pub time: Time,
+}
+
+impl From<&Commit<'_>> for CommitInfo {
+    fn from(commit: &Commit) -> Self {
+        CommitInfo {
+            summary: commit.summary().unwrap_or_default().to_string().clone(),
+            author: commit.author().name().unwrap_or_default().to_string().clone(),
+            id: commit.id().to_string().clone(),
+            time: commit.time().clone(),
+        }
+    }
+}
+
+pub fn behind_commits(path: &str) -> Result<Vec<CommitInfo>, Error> {
+    let repo = Repository::open(path)?;
+    let branch = current_branch(&repo)?;
+    let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
+    let (from, to) = rev_from_to(&rev);
+    let mut revwalk = repo.revwalk()?;
+    revwalk.set_sorting(Sort::TIME & Sort::TOPOLOGICAL);
+    revwalk.push(to);
+    revwalk.hide(from);
+    let mut commits = vec![];
+
+    for entry in revwalk.into_iter() {
+        let commit = repo.find_commit(entry.unwrap()).unwrap();
+        commits.push(CommitInfo::from(&commit));
+    }
+    Ok(commits)
 }

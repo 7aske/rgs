@@ -18,6 +18,8 @@ structopt = "0.3.22"
 serde = "1.0.126"
 serde_derive = "1.0.126"
 toml = "0.5.8"
+chrono = "0.4.19"
+notify-rust = "4.5.2"
 
 [profile.release]
 opt-level=3
