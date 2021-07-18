@@ -133,27 +133,25 @@ impl Rgs {
                                 if self.opts.notify {
                                     match Notification::new()
                                         .summary("cgs watch")
-                                        .urgency(Urgency::Low)
                                         .body(notify_body.as_str())
                                         .icon("git")
                                         .action("pull", "Pull")
                                         .action("open", "Open")
                                         .show() {
                                         Ok(handle) => {
+                                            #[cfg(not(target_os = "windows"))]
                                             handle.wait_for_action(|id| {
                                                 match id {
                                                     "pull" => {
                                                         let ff_res = git::fast_forward(repo);
                                                         if ff_res.is_ok() {
                                                             Notification::new()
-                                                                .urgency(Urgency::Low)
                                                                 .summary("cgs fast-forward")
                                                                 .body(format!("Fast-forwarded: {}", repo.to_str().unwrap()).as_str())
                                                                 .icon("git")
                                                                 .show();
                                                         } else {
                                                             Notification::new()
-                                                                .urgency(Urgency::Low)
                                                                 .summary("cgs fast-forward")
                                                                 .body(format!("Fast-forward failed: {}", repo.to_str().unwrap()).as_str())
                                                                 .icon("abrt")
