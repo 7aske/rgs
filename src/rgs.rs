@@ -136,8 +136,46 @@ impl Rgs {
                                         .urgency(Urgency::Low)
                                         .body(notify_body.as_str())
                                         .icon("git")
+                                        .action("pull", "Pull")
+                                        .action("open", "Open")
                                         .show() {
-                                        Ok(_) => {}
+                                        Ok(handle) => {
+                                            handle.wait_for_action(|id| {
+                                                match id {
+                                                    "pull" => {
+                                                        let ff_res = git::fast_forward(repo);
+                                                        if ff_res.is_ok() {
+                                                            Notification::new()
+                                                                .urgency(Urgency::Low)
+                                                                .summary("cgs fast-forward")
+                                                                .body(format!("Fast-forwarded: {}", repo.to_str().unwrap()).as_str())
+                                                                .icon("git")
+                                                                .show();
+                                                        } else {
+                                                            Notification::new()
+                                                                .urgency(Urgency::Low)
+                                                                .summary("cgs fast-forward")
+                                                                .body(format!("Fast-forward failed: {}", repo.to_str().unwrap()).as_str())
+                                                                .icon("abrt")
+                                                                .show();
+                                                        }
+                                                    }
+                                                    "open" => {
+                                                        #[cfg(target_os = "linux")]
+                                                        let command = "xdg-open";
+                                                        #[cfg(target_os = "windows")]
+                                                        let command = "explorer";
+                                                        #[cfg(target_os = "macos")]
+                                                        let command = "open";
+                                                        process::Command::new(command)
+                                                            .arg(repo.to_str().unwrap())
+                                                            .spawn()
+                                                            .unwrap();
+                                                    }
+                                                    _ => {}
+                                                };
+                                            })
+                                        }
                                         Err(err) => { eprintln!("cgs: {}: unable to show notification", err) }
                                     }
                                 }

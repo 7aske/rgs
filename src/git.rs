@@ -1,6 +1,7 @@
 use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks, Cred, Revspec, Oid, Sort, Commit, Time};
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
+use git2::build::CheckoutBuilder;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -34,7 +35,7 @@ fn current_branch(repo: &Repository) -> Result<String, Error> {
     return Err(Error::from_str("error parsing current branch"));
 }
 
-pub fn current_branch_from_path(path: &PathBuf) -> Result<String, Error> {
+pub fn current_branch_from_path<P: AsRef<Path>>(path: P) -> Result<String, Error> {
     let repo = Repository::open(path)?;
     current_branch(&repo)
 }
@@ -89,6 +90,26 @@ pub fn ahead_behind(path: &str) -> Result<(usize, usize), Error> {
     let res = repo.graph_ahead_behind(from, to)?;
 
     Ok(res)
+}
+
+pub fn fast_forward<P: AsRef<Path>>(path: &P) -> Result<(), Error> {
+    let repo = Repository::open(path)?;
+    let branch = current_branch_from_path(path)?;
+
+    let fetch_head = repo.find_reference("FETCH_HEAD")?;
+    let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
+    let analysis = repo.merge_analysis(&[&fetch_commit])?;
+    if analysis.0.is_up_to_date() {
+        Ok(())
+    } else if analysis.0.is_fast_forward() {
+        let refname = format!("refs/heads/{}", branch);
+        let mut reference = repo.find_reference(&refname)?;
+        reference.set_target(fetch_commit.id(), "Fast-Forward")?;
+        repo.set_head(&refname)?;
+        repo.checkout_head(Some(CheckoutBuilder::default().force()))
+    } else {
+        Err(Error::from_str("Unable to fast-forward"))
+    }
 }
 
 pub struct CommitInfo {
