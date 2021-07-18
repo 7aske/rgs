@@ -14,7 +14,7 @@ use crate::print::{OutputType, print_groups};
 use crate::rgs_opt::RgsOpt;
 use std::fmt::{Display, Formatter};
 use chrono::{NaiveDateTime};
-use notify_rust::{Notification, Urgency};
+use notify_rust::{Notification};
 use crate::git;
 
 extern crate savefile;
