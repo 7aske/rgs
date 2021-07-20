@@ -166,9 +166,9 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             false => COLOR_DIRTY
         };
         let pull_flag = if p.fast_forwarded {
-            "*".black()
+            "*".color(COLOR_DIRTY)
         } else {
-            " ".black()
+            " ".color(COLOR_DIRTY)
         };
         let p_name = p.name.color(color);
         let g_name = p.grp_name.color(COLOR_FG);

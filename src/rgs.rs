@@ -76,12 +76,14 @@ impl Rgs {
                 self.fetch_projs();
             }
 
-            if self.opts.fast_forward {
-                self.fast_forward_projs();
-            }
-
             if !self.is_showing_only_all_dirs() {
                 self.update_projs();
+            }
+
+            // we do ff after updating proj stats
+            // otherwise it would require doing ahead/behind status parsing twice
+            if self.opts.fast_forward {
+                self.fast_forward_projs();
             }
 
             self.print();
@@ -406,6 +408,11 @@ impl Rgs {
         for (i, j, time, result) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.fast_forwarded = result;
+
+            // if ff was successful we manually set behind commits to zero
+            if result {
+                proj.ahead_behind.1 = 0
+            }
             proj.time += time;
         }
 
