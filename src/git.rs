@@ -94,7 +94,7 @@ pub fn ahead_behind(path: &str) -> Result<(usize, usize), Error> {
 
 pub fn fast_forward<P: AsRef<Path>>(path: &P) -> Result<(), Error> {
     let repo = Repository::open(path)?;
-    let branch = current_branch_from_path(path)?;
+    let branch = current_branch(&repo)?;
 
     let fetch_head = repo.find_reference("FETCH_HEAD")?;
     let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
