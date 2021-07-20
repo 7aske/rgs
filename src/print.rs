@@ -221,7 +221,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
     let mut proj_maxlen = 0;
     for proj in &projs {
         // do not factor in projects that are not going to be shown
-        if !out_types.contains(&OutputType::All) && proj.is_clean() {
+        if !out_types.contains(&OutputType::All) && !filter(&proj) {
             continue
         }
 
