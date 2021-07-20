@@ -178,7 +178,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
     let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!(""); });
     let mut print_extra: Box<fn(&Project)> = Box::new(|_p| { print!(""); });
 
-    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0);
+    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0 || p.fast_forwarded);
     for out_type in out_types {
         match out_type {
             OutputType::All => {
