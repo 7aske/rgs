@@ -28,10 +28,13 @@ impl Project {
             time: 0,
         }
     }
+
+    #[inline]
     pub fn is_clean(&self) -> bool {
         self.modified == 0 && !self.is_ahead_behind()
     }
 
+    #[inline]
     pub fn is_ahead_behind(&self) -> bool {
         self.ahead_behind.0 > 0 || self.ahead_behind.1 > 0
     }

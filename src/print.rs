@@ -109,12 +109,13 @@ impl Display for SortType {
     }
 }
 
-
-const COLOR_DIRTY: &str = "yellow";
-const COLOR_CLEAN: &str = "green";
-const COLOR_FG: &str = "blue";
-const COLOR_AHEAD: &str = "cyan";
+// @formatter:off
+const COLOR_DIRTY:  &str = "yellow";
+const COLOR_CLEAN:  &str = "green";
+const COLOR_FG:     &str = "blue";
+const COLOR_AHEAD:  &str = "cyan";
 const COLOR_BEHIND: &str = "magenta";
+// @formatter:on
 
 fn sort_default(_: &Project, _: &Project) -> Ordering {
     Ordering::Equal
@@ -159,16 +160,14 @@ pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types
 }
 
 fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
-    let mut print: Box<fn(&Project)> = Box::new(|p: &Project| {
+    let mut print: Box<fn(&Project, usize, usize)> = Box::new(|p: &Project, grp_len, proj_len| {
         let color = match p.is_clean() {
-            true => "green",
-            false => "yellow"
+            true => COLOR_CLEAN,
+            false => COLOR_DIRTY
         };
-        let mut p_name = p.name.clone();
-        p_name.truncate(24);
-        let mut g_name = p.grp_name.clone();
-        g_name.truncate(16);
-        print!("{:16} {:24} ", g_name.color(COLOR_FG), p_name.color(color));
+        let p_name = p.name.color(color);
+        let g_name = p.grp_name.color(COLOR_FG);
+        print!("{:grp$} {:proj$} ", g_name, p_name, grp = grp_len, proj = proj_len);
     });
 
     let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!("{:16}", ""); });
@@ -181,7 +180,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
                 filter = Box::new(|_p: &&Project| true);
             }
             OutputType::Dir => {
-                print = Box::new(|_p: &Project| print!("{}", _p.path));
+                print = Box::new(|_p: &Project, _, _| print!("{}", _p.path));
                 print_modified = Box::new(|_p: &Project| { print!(""); });
             }
             OutputType::Time => {
@@ -212,19 +211,38 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
     }
 
     let mut projs: Vec<Project> = langs.iter().flat_map(|l| l.projs.to_vec()).collect();
-    if *sort != SortType::None {
-        let sort_fn: fn(&Project, &Project) -> Ordering = match sort {
-            SortType::Dir => sort_dir,
-            SortType::Time => sort_time,
-            SortType::Mod => sort_modifications,
-            SortType::AheadBehind => sort_ahead_behind,
-            _ => sort_default,
-        };
-        projs.sort_by(sort_fn);
+
+    let mut grp_maxlen = 0;
+    let mut proj_maxlen = 0;
+    for proj in &projs {
+        // do not factor in projects that are not going to be shown
+        if !out_types.contains(&OutputType::All) && proj.is_clean() {
+            continue
+        }
+
+        if proj.grp_name.len() > grp_maxlen {
+            grp_maxlen = proj.grp_name.len();
+        }
+
+        if proj.name.len() > proj_maxlen {
+            proj_maxlen = proj.name.len();
+        }
     }
 
+
+    if *sort != SortType::None { // @formatter:off
+        let sort_fn: fn(&Project, &Project) -> Ordering = match sort {
+            SortType::Dir         => sort_dir,
+            SortType::Time        => sort_time,
+            SortType::Mod         => sort_modifications,
+            SortType::AheadBehind => sort_ahead_behind,
+            _                     => sort_default,
+        };
+        projs.sort_by(sort_fn);
+    } // @formatter:on
+
     for p in projs.iter().filter(filter.as_ref()) {
-        print(p);
+        print(p, grp_maxlen, proj_maxlen);
         print_modified(p);
         print_extra(p);
         print!("\n");
