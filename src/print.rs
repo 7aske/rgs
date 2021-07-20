@@ -6,6 +6,19 @@ use crate::lang::{Project, Group};
 use std::fmt::{Display, Formatter};
 use serde_derive::Deserialize;
 
+// @formatter:off
+const COLOR_DIRTY:  &str = "yellow";
+const COLOR_CLEAN:  &str = "green";
+const COLOR_FG:     &str = "blue";
+const COLOR_AHEAD:  &str = "cyan";
+const COLOR_BEHIND: &str = "magenta";
+
+const SYMBOL_MOD:   &str = "±";
+const SYMBOL_AHEAD: &str = "↑";
+const SYMBOL_BEHIND:&str = "↓";
+const SYMBOL_FF:    &str = "⏩";
+// @formatter:on
+
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
 pub enum OutputType {
     All,
@@ -109,14 +122,6 @@ impl Display for SortType {
     }
 }
 
-// @formatter:off
-const COLOR_DIRTY:  &str = "yellow";
-const COLOR_CLEAN:  &str = "green";
-const COLOR_FG:     &str = "blue";
-const COLOR_AHEAD:  &str = "cyan";
-const COLOR_BEHIND: &str = "magenta";
-// @formatter:on
-
 fn sort_default(_: &Project, _: &Project) -> Ordering {
     Ordering::Equal
 }
@@ -166,13 +171,13 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             false => COLOR_DIRTY
         };
         let pull_flag = if p.fast_forwarded {
-            "*".color(COLOR_DIRTY)
+            SYMBOL_FF.color(COLOR_BEHIND)
         } else {
-            " ".color(COLOR_DIRTY)
+            " ".color(COLOR_BEHIND)
         };
         let p_name = p.name.color(color);
         let g_name = p.grp_name.color(COLOR_FG);
-        print!("{:grp$} {:proj$}{} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
+        print!("{:grp$} {:proj$} {} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
     });
 
     let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!(""); });
@@ -197,8 +202,8 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             OutputType::Modification => {
                 print_modified = Box::new(|p: &Project| {
                     let ahead_behind = if p.is_ahead_behind() {
-                        let ahead = format!("↑{:3}", p.ahead_behind.0).color(COLOR_AHEAD);
-                        let behind = format!("↓{:3}", p.ahead_behind.1).color(COLOR_BEHIND);
+                        let ahead = format!("{}{:3}", SYMBOL_AHEAD, p.ahead_behind.0).color(COLOR_AHEAD);
+                        let behind = format!("{}{:3}", SYMBOL_BEHIND, p.ahead_behind.1).color(COLOR_BEHIND);
                         format!("{:4} {:4}", ahead, behind)
                     } else {
                         String::new()
@@ -209,7 +214,7 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
                         false => COLOR_CLEAN,
                     };
 
-                    print!("{:5} {:9} ", format!("±{}", p.modified).color(color), ahead_behind);
+                    print!("{:5} {:9} ", format!("{}{}", SYMBOL_MOD, p.modified).color(color), ahead_behind);
                 });
             }
         }

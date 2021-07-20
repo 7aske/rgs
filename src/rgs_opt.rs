@@ -2,7 +2,7 @@ use glob::Pattern;
 use crate::print::{OutputType, SortType, SummaryType};
 use std::{io, env};
 use std::collections::HashSet;
-use std::fs::File;
+use std::fs::{File};
 use std::path::{Path, PathBuf};
 use std::iter::FromIterator;
 use std::io::{BufRead, Read};
@@ -160,6 +160,10 @@ pub struct RgsOpt {
 
 #[inline(always)]
 fn parse_codeignore(code: &String, no_codeignore: bool) -> (Vec<Pattern>, Vec<Pattern>) {
+    if no_codeignore {
+        return (vec![], vec![]);
+    }
+
     let mut codeignore = vec![];
     let mut codeignore_exclude = vec![];
     let file = File::open(Path::new(code).join(".codeignore"));
@@ -174,7 +178,7 @@ fn parse_codeignore(code: &String, no_codeignore: bool) -> (Vec<Pattern>, Vec<Pa
             if line.starts_with("!") {
                 let line = line.chars().skip(1).collect::<String>();
                 codeignore_exclude.push(Pattern::new(line.as_str()).unwrap());
-            } else if !no_codeignore {
+            } else  {
                 codeignore.push(Pattern::new(line.as_str()).unwrap());
             }
         }
