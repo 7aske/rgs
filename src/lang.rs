@@ -4,9 +4,14 @@ pub struct Project {
     pub name: String,
     pub grp_name: String,
     pub path: String,
+    #[savefile_ignore]
     pub modified: usize,
+    #[savefile_ignore]
     pub time: u64,
+    #[savefile_ignore]
     pub ahead_behind: (usize, usize),
+    #[savefile_ignore]
+    pub fast_forwarded: bool,
 }
 
 #[derive(Clone, Savefile)]
@@ -14,6 +19,7 @@ pub struct Group {
     pub name: String,
     pub path: String,
     pub projs: Vec<Project>,
+    #[savefile_ignore]
     pub not_ok: i32,
 }
 
@@ -26,6 +32,7 @@ impl Project {
             modified: 0,
             ahead_behind: (0, 0),
             time: 0,
+            fast_forwarded: false,
         }
     }
 

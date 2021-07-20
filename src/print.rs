@@ -165,12 +165,17 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             true => COLOR_CLEAN,
             false => COLOR_DIRTY
         };
+        let pull_flag = if p.fast_forwarded {
+            "*".black()
+        } else {
+            " ".black()
+        };
         let p_name = p.name.color(color);
         let g_name = p.grp_name.color(COLOR_FG);
-        print!("{:grp$} {:proj$} ", g_name, p_name, grp = grp_len, proj = proj_len);
+        print!("{:grp$} {:proj$}{} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
     });
 
-    let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!("{:16}", ""); });
+    let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!(""); });
     let mut print_extra: Box<fn(&Project)> = Box::new(|_p| { print!(""); });
 
     let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0);

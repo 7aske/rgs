@@ -71,12 +71,19 @@ impl Rgs {
             self.run_watch()?
         } else {
             self.load_repos();
+
             if self.opts.fetch {
                 self.fetch_projs();
             }
+
+            if self.opts.fast_forward {
+                self.fast_forward_projs();
+            }
+
             if !self.is_showing_only_all_dirs() {
                 self.update_projs();
             }
+
             self.print();
         }
         Ok(())
@@ -140,7 +147,7 @@ impl Rgs {
                                         .show() {
                                         Ok(handle) => {
                                             #[cfg(not(target_os = "windows"))]
-                                            handle.wait_for_action(|id| {
+                                                handle.wait_for_action(|id| {
                                                 match id {
                                                     "pull" => {
                                                         let ff_res = git::fast_forward(repo);
@@ -160,11 +167,11 @@ impl Rgs {
                                                     }
                                                     "open" => {
                                                         #[cfg(target_os = "linux")]
-                                                        let command = "xdg-open";
+                                                            let command = "xdg-open";
                                                         #[cfg(target_os = "windows")]
-                                                        let command = "explorer";
+                                                            let command = "explorer";
                                                         #[cfg(target_os = "macos")]
-                                                        let command = "open";
+                                                            let command = "open";
                                                         process::Command::new(command)
                                                             .arg(repo.to_str().unwrap())
                                                             .spawn()
@@ -372,5 +379,36 @@ impl Rgs {
                 self.list_dir(path_str.to_string(), depth - 1);
             }
         }
+    }
+
+    fn fast_forward_projs(&mut self) {
+        let (tx, rx) = channel();
+
+        for i in 0..self.groups.len() {
+            for j in 0..self.groups[i].projs.len() {
+                let proj = &self.groups[i].projs[j];
+                if proj.ahead_behind.1 == 0 {
+                    continue;
+                }
+
+                let path = String::from(&proj.path);
+                let tx = Sender::clone(&tx);
+                self.pool.execute(move || {
+                    let now = Instant::now();
+                    let result = git::fast_forward(&path);
+                    tx.send((i, j, now.elapsed().as_millis() as u64, result.is_ok())).unwrap()
+                });
+            }
+        }
+
+        drop(tx);
+
+        for (i, j, time, result) in rx {
+            let proj = &mut self.groups[i].projs[j];
+            proj.fast_forwarded = result;
+            proj.time += time;
+        }
+
+        self.pool.join();
     }
 }

@@ -20,7 +20,7 @@ pub struct CodeRc {
 #[structopt(name = "rgs",
 about = "Batch repository check tool (github.com/7aske/rgs)",
 author = "Nikola Tasić - 7aske.com",
-version = "1.0.4")]
+version = "1.0.5")]
 pub struct RgsOptStruct {
     #[structopt(short = "c", long = "code", env, help = "override CODE variable")]
     pub code: String,
@@ -32,6 +32,8 @@ pub struct RgsOptStruct {
     pub sort: Option<SortType>,
     #[structopt(short = "f", long = "fetch", help = "also fetch from origin")]
     pub fetch: bool,
+    #[structopt(short = "F", long = "ff", help = "also fast-forward default branch")]
+    pub fast_forward: bool,
     #[structopt(short = "D", long = "depth", default_value = "2", help = "project search recursive depth")]
     pub depth: usize,
     #[structopt(short = "p", long = "profile", help = "load profile configuration from 'coderc'")]
@@ -145,6 +147,7 @@ pub struct RgsOpt {
     pub sort: SortType,
     pub summary_type: SummaryType,
     pub fetch: bool,
+    pub fast_forward: bool,
     pub depth: usize,
     pub threads: usize,
 
@@ -209,6 +212,7 @@ impl From<&RgsOptStruct> for RgsOpt {
 
         let sort = opt.sort.unwrap_or_default();
         let fetch = opt.fetch;
+        let fast_forward = opt.fast_forward;
         let depth = opt.depth;
         let threads = opt.threads.unwrap_or(num_cpus::get());
         let summary_type = SummaryType::from_occurrences(opt.verbose as u64);
@@ -238,6 +242,7 @@ impl From<&RgsOptStruct> for RgsOpt {
             out_types,
             sort,
             fetch,
+            fast_forward,
             depth,
             threads,
             watch,
