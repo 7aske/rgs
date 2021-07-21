@@ -16,7 +16,7 @@ const COLOR_BEHIND: &str = "magenta";
 const SYMBOL_MOD:   &str = "±";
 const SYMBOL_AHEAD: &str = "↑";
 const SYMBOL_BEHIND:&str = "↓";
-const SYMBOL_FF:    &str = "⏩";
+const SYMBOL_FF:    &str = "→";
 // @formatter:on
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
