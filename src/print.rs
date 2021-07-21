@@ -122,6 +122,14 @@ impl Display for SortType {
     }
 }
 
+pub fn print_projects(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>, sort: &SortType) {
+    match summary_type {
+        SummaryType::VeryVerbose => very_verbose_print(langs),
+        SummaryType::Verbose => verbose_print(langs, output_types, sort),
+        _ => summary_print(langs, output_types, sort),
+    }
+}
+
 fn sort_default(_: &Project, _: &Project) -> Ordering {
     Ordering::Equal
 }
@@ -145,7 +153,7 @@ fn sort_time(proj_a: &Project, proj_b: &Project) -> Ordering {
     proj_a.time.partial_cmp(&proj_b.time).unwrap()
 }
 
-fn sort_modifications(proj_a: &Project, proj_b: &Project) -> Ordering {
+fn sort_modification(proj_a: &Project, proj_b: &Project) -> Ordering {
     if proj_a.modified != 0 || proj_b.modified != 0 {
         proj_a.modified.partial_cmp(&proj_b.modified).unwrap()
     } else {
@@ -156,80 +164,91 @@ fn sort_modifications(proj_a: &Project, proj_b: &Project) -> Ordering {
     }
 }
 
-pub fn print_groups(langs: &Vec<Group>, summary_type: &SummaryType, output_types: &Vec<OutputType>, sort: &SortType) {
-    match summary_type {
-        SummaryType::VeryVerbose => very_verbose_print(langs),
-        SummaryType::Verbose => verbose_print(langs, output_types, sort),
-        _ => default_print(langs, output_types, sort),
-    }
+fn filter_stub(_: &&Project) -> bool {
+    true
 }
 
-fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
-    let mut print: Box<fn(&Project, usize, usize)> = Box::new(|p: &Project, grp_len, proj_len| {
-        let color = match p.is_clean() {
-            true => COLOR_CLEAN,
-            false => COLOR_DIRTY
-        };
-        let pull_flag = if p.fast_forwarded {
-            SYMBOL_FF.color(COLOR_BEHIND)
-        } else {
-            " ".color(COLOR_BEHIND)
-        };
-        let p_name = p.name.color(color);
-        let g_name = p.grp_name.color(COLOR_FG);
-        print!("{:grp$} {:proj$} {} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
-    });
+fn filter_modification(p: &&Project) -> bool {
+    p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0 || p.fast_forwarded
+}
 
-    let mut print_modified: Box<fn(&Project)> = Box::new(|_p: &Project| { print!(""); });
-    let mut print_extra: Box<fn(&Project)> = Box::new(|_p| { print!(""); });
+fn print_stub(_: &Project) {}
 
-    let mut filter: Box<fn(&&Project) -> bool> = Box::new(|p: &&Project| p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0 || p.fast_forwarded);
+fn print_default(p: &Project, grp_len: usize, proj_len: usize) {
+    let color = match p.is_clean() {
+        true => COLOR_CLEAN,
+        false => COLOR_DIRTY
+    };
+    let pull_flag = if p.fast_forwarded {
+        SYMBOL_FF.color(COLOR_BEHIND)
+    } else {
+        " ".color(COLOR_BEHIND)
+    };
+    let p_name = p.name.color(color);
+    let g_name = p.grp_name.color(COLOR_FG);
+    print!("{:grp$} {:proj$} {} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
+}
+
+fn print_modification(p: &Project) {
+    let ahead_behind = if p.is_ahead_behind() {
+        let ahead = format!("{}{:3}", SYMBOL_AHEAD, p.ahead_behind.0).color(COLOR_AHEAD);
+        let behind = format!("{}{:3}", SYMBOL_BEHIND, p.ahead_behind.1).color(COLOR_BEHIND);
+        format!("{:4} {:4}", ahead, behind)
+    } else {
+        String::new()
+    };
+
+    let color = match p.modified > 0 {
+        true => COLOR_DIRTY,
+        false => COLOR_CLEAN,
+    };
+
+    print!("{:5} {:9} ", format!("{}{}", SYMBOL_MOD, p.modified).color(color), ahead_behind);
+}
+
+fn print_dir(p: &Project, _: usize, _: usize) {
+    print!("{}", p.path)
+}
+
+fn print_extra(p: &Project) {
+    let time = p.time.to_string() + "ms";
+    print!("{}", time.black());
+}
+
+
+fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
+    let mut print_fn: fn(&Project, usize, usize) = print_default;
+    let mut print_modification_fn: fn(&Project) = print_stub;
+    let mut print_extra_fn: fn(&Project) = print_stub;
+    let mut filter: fn(&&Project) -> bool = filter_modification;
+
+    // out_types contain only unique values anyways
     for out_type in out_types {
         match out_type {
             OutputType::All => {
-                filter = Box::new(|_p: &&Project| true);
+                filter = filter_stub;
             }
             OutputType::Dir => {
-                print = Box::new(|_p: &Project, _, _| print!("{}", _p.path));
-                print_modified = Box::new(|_p: &Project| { print!(""); });
+                print_fn = print_dir;
+                print_modification_fn = print_stub;
             }
             OutputType::Time => {
-                print_extra = Box::new(|p| {
-                    let time = p.time.to_string() + "ms";
-                    print!("{}", time.black());
-                });
+                print_extra_fn = print_extra;
             }
             OutputType::Modification => {
-                print_modified = Box::new(|p: &Project| {
-                    let ahead_behind = if p.is_ahead_behind() {
-                        let ahead = format!("{}{:3}", SYMBOL_AHEAD, p.ahead_behind.0).color(COLOR_AHEAD);
-                        let behind = format!("{}{:3}", SYMBOL_BEHIND, p.ahead_behind.1).color(COLOR_BEHIND);
-                        format!("{:4} {:4}", ahead, behind)
-                    } else {
-                        String::new()
-                    };
-
-                    let color = match p.modified > 0 {
-                        true => COLOR_DIRTY,
-                        false => COLOR_CLEAN,
-                    };
-
-                    print!("{:5} {:9} ", format!("{}{}", SYMBOL_MOD, p.modified).color(color), ahead_behind);
-                });
+                print_modification_fn = print_modification;
             }
         }
     }
 
-    let mut projs: Vec<Project> = langs.iter().flat_map(|l| l.projs.to_vec()).collect();
+    let mut projs: Vec<Project> = langs.iter()
+        .flat_map(|l| l.projs.to_vec())
+        .filter(|p| filter(&p))
+        .collect();
 
     let mut grp_maxlen = 0;
     let mut proj_maxlen = 0;
     for proj in &projs {
-        // do not factor in projects that are not going to be shown
-        if !out_types.contains(&OutputType::All) && !filter(&proj) {
-            continue
-        }
-
         if proj.grp_name.len() > grp_maxlen {
             grp_maxlen = proj.grp_name.len();
         }
@@ -244,17 +263,17 @@ fn default_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
         let sort_fn: fn(&Project, &Project) -> Ordering = match sort {
             SortType::Dir         => sort_dir,
             SortType::Time        => sort_time,
-            SortType::Mod         => sort_modifications,
+            SortType::Mod         => sort_modification,
             SortType::AheadBehind => sort_ahead_behind,
             _                     => sort_default,
         };
         projs.sort_by(sort_fn);
     } // @formatter:on
 
-    for p in projs.iter().filter(filter.as_ref()) {
-        print(p, grp_maxlen, proj_maxlen);
-        print_modified(p);
-        print_extra(p);
+    for p in &projs {
+        print_fn(p, grp_maxlen, proj_maxlen);
+        print_modification_fn(p);
+        print_extra_fn(p);
         print!("\n");
     }
 }
@@ -274,7 +293,7 @@ fn verbose_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             println!("{:8} {:4} {:6} {}", g_name, g_projs.color(COLOR_CLEAN), time.color("black"), l.path.color("white"));
         }
     }
-    default_print(langs, out_types, sort);
+    summary_print(langs, out_types, sort);
 }
 
 fn very_verbose_print(langs: &Vec<Group>) {

@@ -10,7 +10,7 @@ use std::{fs, io, thread, process};
 use threadpool::ThreadPool;
 
 use crate::lang::{Group, Project};
-use crate::print::{OutputType, print_groups};
+use crate::print::{OutputType, print_projects};
 use crate::rgs_opt::RgsOpt;
 use std::fmt::{Display, Formatter};
 use chrono::{NaiveDateTime};
@@ -246,7 +246,7 @@ impl Rgs {
     }
 
     pub fn print(&mut self) {
-        print_groups(&self.groups, &self.opts.summary_type, &self.opts.out_types, &self.opts.sort)
+        print_projects(&self.groups, &self.opts.summary_type, &self.opts.out_types, &self.opts.sort)
     }
 
     pub fn fetch_projs(&mut self) {
