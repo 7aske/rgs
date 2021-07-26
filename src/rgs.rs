@@ -242,7 +242,11 @@ impl Rgs {
         }
 
         self.groups.sort_by(|a, b| a.name.cmp(&b.name));
-        save_file(cache.to_str().unwrap(), 0, &self.groups).unwrap();
+
+        // save cache only if it has loaded all the repositories
+        if self.opts.codeignore.len() == 0 {
+            save_file(cache.to_str().unwrap(), 0, &self.groups).unwrap();
+        }
     }
 
     pub fn print(&mut self) {
