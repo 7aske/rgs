@@ -2,7 +2,7 @@ use glob::{GlobResult};
 use mpsc::Sender;
 use savefile::prelude::*;
 use std::ops::Sub;
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::mpsc;
 use std::time::{Instant, SystemTime, Duration};
@@ -14,8 +14,8 @@ use crate::print::{OutputType, print_projects};
 use crate::rgs_opt::RgsOpt;
 use std::fmt::{Display, Formatter};
 use chrono::{NaiveDateTime};
-use notify_rust::{Notification};
 use crate::git;
+use crate::notify::notify;
 
 extern crate savefile;
 
@@ -87,14 +87,84 @@ impl Rgs {
             }
 
             self.print();
+
+            if self.opts.notify {
+                for grp in &self.groups {
+                    for proj in &grp.projs {
+                        let repo = Path::new(&proj.path).to_path_buf();
+                        if proj.ahead_behind.1 != 0 {
+                            self.parse_and_notify(&repo);
+                        }
+                    }
+                }
+                self.pool.join();
+            }
         }
         Ok(())
     }
 
-    fn run_watch(&mut self) -> Result<(), RgsError> {
+    #[inline(always)]
+    fn parse_and_notify(&self, repo: &PathBuf) {
         const SUMMARY_ABBR_LEN: usize = 60;
         const MAX_COMMITS_BODY: usize = 10;
+        let branch = git::current_branch_from_path(repo).unwrap_or_default();
+        if self.opts.watch  {
+            println!("{}:{}\n", repo.to_str().unwrap(), branch);
+        }
 
+        let commits_opt = git::behind_commits(&repo.to_str().unwrap());
+        match commits_opt {
+            Ok(commits) => {
+                if !commits.is_empty() {
+                    let commits_len = commits.len();
+                    let mut notify_body = String::from(format!("{}:{} ({})\n\n", repo.to_str().unwrap(), branch, commits_len));
+                    let mut processed_commits = 0;
+                    for commit in commits {
+                        if processed_commits < MAX_COMMITS_BODY {
+                            let time = NaiveDateTime::from_timestamp(commit.time.seconds(), 0);
+                            if self.opts.watch {
+                                println!("{}\n{}\n{} @ {}\n", commit.id, commit.summary, commit.author, time.format("%Y-%m-%d %H:%M:%S"));
+                            }
+                            let commit_abbr: String = commit.id.chars().take(8).collect();
+                            let summary_abbr: String = commit.summary.chars().take(SUMMARY_ABBR_LEN).collect();
+                            let dots = if commit.summary.len() > SUMMARY_ABBR_LEN {
+                                "..."
+                            } else {
+                                ""
+                            };
+
+                            notify_body += format!("{} {}{}\n", commit_abbr, summary_abbr, dots).as_str();
+                            processed_commits += 1;
+                        } else if processed_commits == MAX_COMMITS_BODY {
+                            let more_commits_msg = format!("\n{} more commit(s)...", commits_len - processed_commits);
+                            notify_body += more_commits_msg.as_str();
+                            if self.opts.watch {
+                                println!("{}", more_commits_msg);
+                            }
+                            processed_commits += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if self.opts.notify {
+                        let repo = PathBuf::from(repo);
+                        self.pool.execute(move || {
+                            notify(&repo, &notify_body);
+                        });
+                    }
+
+                    if self.opts.exit {
+                        self.pool.join();
+                        process::exit(commits_len as i32);
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    fn run_watch(&mut self) -> Result<(), RgsError> {
         // check only once if there is an invalid repository
         for repo in &self.opts.repos {
             if !git::is_inside_work_tree(&repo.to_str().unwrap()) {
@@ -105,95 +175,8 @@ impl Rgs {
         loop {
             for repo in &self.opts.repos {
                 let fetch = git::fetch(repo.to_str().unwrap());
-                let branch = git::current_branch_from_path(repo).unwrap_or_default();
-                println!("{}:{}\n", repo.to_str().unwrap(), branch);
                 if fetch.is_ok() {
-                    let commits_opt = git::behind_commits(&repo.to_str().unwrap());
-                    match commits_opt {
-                        Ok(commits) => {
-                            if !commits.is_empty() {
-                                let commits_len = commits.len();
-                                let mut notify_body = String::from(format!("{}:{} ({})\n\n", repo.to_str().unwrap(), branch, commits_len));
-                                let mut processed_commits = 0;
-                                for commit in commits {
-                                    if processed_commits < MAX_COMMITS_BODY {
-                                        let time = NaiveDateTime::from_timestamp(commit.time.seconds(), 0);
-                                        println!("{}\n{}\n{} @ {}\n", commit.id, commit.summary, commit.author, time.format("%Y-%m-%d %H:%M:%S"));
-                                        let commit_abbr: String = commit.id.chars().take(8).collect();
-                                        let summary_abbr: String = commit.summary.chars().take(SUMMARY_ABBR_LEN).collect();
-                                        let dots = if commit.summary.len() > SUMMARY_ABBR_LEN {
-                                            "..."
-                                        } else {
-                                            ""
-                                        };
-
-                                        notify_body += format!("{} {}{}\n", commit_abbr, summary_abbr, dots).as_str();
-                                        processed_commits += 1;
-                                    } else if processed_commits == MAX_COMMITS_BODY {
-                                        let more_commits_msg = format!("\n{} more commit(s)...", commits_len - processed_commits);
-                                        notify_body += more_commits_msg.as_str();
-                                        println!("{}", more_commits_msg);
-                                        processed_commits += 1;
-                                    } else {
-                                        break;
-                                    }
-                                }
-
-                                if self.opts.notify {
-                                    match Notification::new()
-                                        .summary("cgs watch")
-                                        .body(notify_body.as_str())
-                                        .icon("git")
-                                        .action("pull", "Pull")
-                                        .action("open", "Open")
-                                        .show() {
-                                        Ok(handle) => {
-                                            #[cfg(not(target_os = "windows"))]
-                                                handle.wait_for_action(|id| {
-                                                match id {
-                                                    "pull" => {
-                                                        let ff_res = git::fast_forward(repo);
-                                                        if ff_res.is_ok() {
-                                                            Notification::new()
-                                                                .summary("cgs fast-forward")
-                                                                .body(format!("Fast-forwarded: {}", repo.to_str().unwrap()).as_str())
-                                                                .icon("git")
-                                                                .show();
-                                                        } else {
-                                                            Notification::new()
-                                                                .summary("cgs fast-forward")
-                                                                .body(format!("Fast-forward failed: {}", repo.to_str().unwrap()).as_str())
-                                                                .icon("abrt")
-                                                                .show();
-                                                        }
-                                                    }
-                                                    "open" => {
-                                                        #[cfg(target_os = "linux")]
-                                                            let command = "xdg-open";
-                                                        #[cfg(target_os = "windows")]
-                                                            let command = "explorer";
-                                                        #[cfg(target_os = "macos")]
-                                                            let command = "open";
-                                                        process::Command::new(command)
-                                                            .arg(repo.to_str().unwrap())
-                                                            .spawn()
-                                                            .unwrap();
-                                                    }
-                                                    _ => {}
-                                                };
-                                            })
-                                        }
-                                        Err(err) => { eprintln!("cgs: {}: unable to show notification", err) }
-                                    }
-                                }
-
-                                if self.opts.exit {
-                                    process::exit(commits_len as i32);
-                                }
-                            }
-                        }
-                        Err(_) => {}
-                    }
+                    self.parse_and_notify(repo);
                 } else if !fetch.is_ok() && self.opts.repos.len() == 1 {
                     return Err(RgsError::from(fetch.unwrap_err().message()));
                 }

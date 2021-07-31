@@ -5,6 +5,7 @@ mod lang;
 mod rgs;
 mod print;
 mod rgs_opt;
+mod notify;
 
 use colored::*;
 use crate::rgs::{Rgs};
