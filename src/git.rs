@@ -13,11 +13,12 @@ pub fn is_clean(path: &str) -> usize {
     };
 }
 
-
 pub fn is_inside_work_tree(path: &str) -> bool {
-    return match Repository::open(path) {
-        Ok(_) => true,
-        Err(_) => false
+    let repo = Repository::open(path);
+    return if repo.is_ok() {
+        !repo.unwrap().is_bare()
+    } else {
+        false
     };
 }
 
