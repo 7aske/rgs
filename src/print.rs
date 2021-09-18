@@ -10,6 +10,7 @@ use serde_derive::Deserialize;
 const COLOR_DIRTY:  &str = "yellow";
 const COLOR_CLEAN:  &str = "green";
 const COLOR_FG:     &str = "blue";
+const COLOR_BRANCH: &str = "blue";
 const COLOR_AHEAD:  &str = "cyan";
 const COLOR_BEHIND: &str = "magenta";
 
@@ -25,6 +26,7 @@ pub enum OutputType {
     Dir,
     Time,
     Modification,
+    Branches,
 }
 
 // @formatter:off
@@ -173,8 +175,9 @@ fn filter_modification(p: &&Project) -> bool {
 }
 
 fn print_stub(_: &Project) {}
+fn print_branch_stub(_: &Project, _: usize) {}
 
-fn print_default(p: &Project, grp_len: usize, proj_len: usize) {
+fn print_default(p: &Project, grp_len: usize, proj_len: usize, branch_len: usize) {
     let color = match p.is_clean() {
         true => COLOR_CLEAN,
         false => COLOR_DIRTY
@@ -186,7 +189,8 @@ fn print_default(p: &Project, grp_len: usize, proj_len: usize) {
     };
     let p_name = p.name.color(color);
     let g_name = p.grp_name.color(COLOR_FG);
-    print!("{:grp$} {:proj$} {} ", g_name, p_name, pull_flag, grp = grp_len, proj = proj_len);
+    let branch = format!("{:size$} ", p.current_branch, size = branch_len).color(COLOR_BRANCH);
+    print!("{:grp$} {:proj$}{}{}", g_name, p_name, pull_flag, branch, grp = grp_len, proj = proj_len);
 }
 
 fn print_modification(p: &Project) {
@@ -206,7 +210,7 @@ fn print_modification(p: &Project) {
     print!("{:5} {:9} ", format!("{}{}", SYMBOL_MOD, p.modified).color(color), ahead_behind);
 }
 
-fn print_dir(p: &Project, _: usize, _: usize) {
+fn print_dir(p: &Project, _: usize, _: usize, _: usize) {
     print!("{}", p.path)
 }
 
@@ -215,11 +219,27 @@ fn print_extra(p: &Project) {
     print!("{}", time.black());
 }
 
+fn print_branches(p: &Project, maxlen: usize) {
+    for key in p.remote_ahead_behind.keys() {
+        if *key != p.current_branch {
+            let ahead_behind = p.remote_ahead_behind.get(key).unwrap();
+            if ahead_behind.0 > 0 || ahead_behind.1 > 0 {
+                let ahead = format!("{}{:3}", SYMBOL_AHEAD, ahead_behind.0).color(COLOR_AHEAD);
+                let behind = format!("{}{:3}", SYMBOL_BEHIND, ahead_behind.1).color(COLOR_BEHIND);
+                let ahead_behind_str = format!("{:4} {:4}", ahead, behind);
+                let branch = format!("{}", key).color(COLOR_BRANCH);
+                print!("{:size$} {} ", branch, ahead_behind_str, size=maxlen);
+            }
+        }
+    }
+}
+
 
 fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortType) {
-    let mut print_fn: fn(&Project, usize, usize) = print_default;
+    let mut print_fn: fn(&Project, usize, usize, usize) = print_default;
     let mut print_modification_fn: fn(&Project) = print_stub;
     let mut print_extra_fn: fn(&Project) = print_stub;
+    let mut print_branches_fn: fn(&Project, usize) = print_branch_stub;
     let mut filter: fn(&&Project) -> bool = filter_modification;
 
     // out_types contain only unique values anyways
@@ -238,6 +258,9 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             OutputType::Modification => {
                 print_modification_fn = print_modification;
             }
+            OutputType::Branches => {
+                print_branches_fn = print_branches;
+            }
         }
     }
 
@@ -248,6 +271,7 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
 
     let mut grp_maxlen = 0;
     let mut proj_maxlen = 0;
+    let mut branch_maxlen = 0;
     for proj in &projs {
         if proj.grp_name.len() > grp_maxlen {
             grp_maxlen = proj.grp_name.len();
@@ -255,6 +279,10 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
 
         if proj.name.len() > proj_maxlen {
             proj_maxlen = proj.name.len();
+        }
+
+        if proj.current_branch.len() > branch_maxlen {
+            branch_maxlen = proj.current_branch.len();
         }
     }
 
@@ -271,9 +299,10 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
     } // @formatter:on
 
     for p in &projs {
-        print_fn(p, grp_maxlen, proj_maxlen);
+        print_fn(p, grp_maxlen, proj_maxlen, branch_maxlen);
         print_modification_fn(p);
         print_extra_fn(p);
+        print_branches_fn(p, branch_maxlen);
         print!("\n");
     }
 }

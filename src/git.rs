@@ -110,11 +110,11 @@ pub fn ahead_behind(path: &str, branch: &String) -> Result<(usize, usize), Error
 pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, usize, usize)>, Error> {
     let repo = Repository::open(path)?;
     let mut result = vec![];
-    for branch in repo.branches(Option::from(BranchType::Local))? {
+    for branch in repo.branches(Option::Some(BranchType::Local))? {
         let branch = branch.unwrap();
         let branch = branch.0.name().unwrap().unwrap();
         let branch = String::from(branch);
-        let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
+        let rev = repo.revparse(format!("{branch}..origin/{branch}", branch=branch).as_str())?;
         let (from, to) = rev_from_to(&rev);
         let ahead_behind = repo.graph_ahead_behind(from, to)?;
         result.push((branch, ahead_behind.0, ahead_behind.1))

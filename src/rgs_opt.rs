@@ -20,7 +20,7 @@ pub struct CodeRc {
 #[structopt(name = "rgs",
 about = "Batch repository check tool (github.com/7aske/rgs)",
 author = "Nikola Tasić - 7aske.com",
-version = "1.0.5")]
+version = "1.0.6")]
 pub struct RgsOptStruct {
     #[structopt(short = "c", long = "code", env, help = "override CODE variable")]
     pub code: String,
@@ -50,6 +50,8 @@ pub struct RgsOptStruct {
     pub dir: bool,
     #[structopt(short = "m", long = "mod", help = "show modifications or ahead/behind status")]
     pub modification: bool,
+    #[structopt(short = "b", long = "branches", help = "show remote branch ahead/behind status (assumes -m flag)")]
+    pub branches: bool,
 
     #[structopt(flatten)]
     pub watch_options: RgsWatchOptStruct,
@@ -109,6 +111,9 @@ impl RgsOptStruct {
         } else if table.contains_key("mod") {
             self.modification = table.get("mod").unwrap().as_bool().unwrap();
         }
+        if table.contains_key("branches") {
+            self.branches = table.get("branches").unwrap().as_bool().unwrap();
+        }
     }
 
     pub fn load_profile(&mut self) {
@@ -156,6 +161,7 @@ pub struct RgsOpt {
     pub timeout: u64,
     pub exit: bool,
     pub notify: bool,
+    pub branches: bool,
 }
 
 #[inline(always)]
@@ -212,12 +218,18 @@ impl From<&RgsOptStruct> for RgsOpt {
             out_types.retain(|x| *x != OutputType::Modification && *x != OutputType::Time);
         }
 
+        if opt.branches {
+            out_types.insert(OutputType::Branches);
+            out_types.insert(OutputType::Modification);
+        }
+
         let out_types = Vec::from_iter(out_types);
 
         let sort = opt.sort.unwrap_or_default();
         let fetch = opt.fetch;
         let fast_forward = opt.fast_forward;
         let depth = opt.depth;
+        let branches = opt.branches;
         let threads = opt.threads.unwrap_or(num_cpus::get());
         let summary_type = SummaryType::from_occurrences(opt.verbose as u64);
 
@@ -254,6 +266,7 @@ impl From<&RgsOptStruct> for RgsOpt {
             timeout,
             exit,
             notify,
+            branches,
         }
     }
 }
