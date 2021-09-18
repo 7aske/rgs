@@ -2,6 +2,7 @@ use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks,
 use std::env;
 use std::path::{Path};
 use git2::build::CheckoutBuilder;
+use std::collections::HashMap;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -41,9 +42,22 @@ pub fn current_branch_from_path<P: AsRef<Path>>(path: P) -> Result<String, Error
     current_branch(&repo)
 }
 
-pub fn fetch(path: &str) -> Result<(), Error> {
+pub fn fetch_all(path: &str) {
+    let repo = Repository::open(path);
+    if repo.is_err() {
+        return;
+    }
+    let repo = repo.unwrap();
+    for branch in repo.branches(Option::from(BranchType::Local)).unwrap() {
+        let branch = branch.unwrap();
+        let branch = branch.0.name().unwrap().unwrap();
+        let branch = String::from(branch);
+        fetch(path, &branch);
+    }
+}
+
+pub fn fetch(path: &str, branch: &String) -> Result<(), Error> {
     let repo = Repository::open(path)?;
-    let branch = current_branch(&repo)?;
     let mut callbacks = RemoteCallbacks::default();
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
         let priv_key_path = format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
@@ -67,7 +81,7 @@ pub fn fetch(path: &str) -> Result<(), Error> {
         eprintln!("{}", err_msg);
         return Err(Error::from_str(err_msg.as_str()));
     }
-    match remote.unwrap().fetch(&[String::from(&branch)], Option::Some(&mut fetch_opts), None) {
+    match remote.unwrap().fetch(&[String::from(branch)], Option::Some(&mut fetch_opts), None) {
         Ok(_) => {
             eprintln!("fetching {}:{}", path, branch)
         }
@@ -83,9 +97,8 @@ fn rev_from_to(rev: &Revspec) -> (Oid, Oid) {
     (rev.from().unwrap().id(), rev.to().unwrap().id())
 }
 
-pub fn ahead_behind(path: &str) -> Result<(usize, usize), Error> {
+pub fn ahead_behind(path: &str, branch: &String) -> Result<(usize, usize), Error> {
     let repo = Repository::open(path)?;
-    let branch = current_branch(&repo)?;
     let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
     let (from, to) = rev_from_to(&rev);
     let res = repo.graph_ahead_behind(from, to)?;
@@ -93,9 +106,25 @@ pub fn ahead_behind(path: &str) -> Result<(usize, usize), Error> {
     Ok(res)
 }
 
-pub fn fast_forward<P: AsRef<Path>>(path: &P) -> Result<(), Error> {
+
+pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, usize, usize)>, Error> {
     let repo = Repository::open(path)?;
-    let branch = current_branch(&repo)?;
+    let mut result = vec![];
+    for branch in repo.branches(Option::from(BranchType::Local))? {
+        let branch = branch.unwrap();
+        let branch = branch.0.name().unwrap().unwrap();
+        let branch = String::from(branch);
+        let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
+        let (from, to) = rev_from_to(&rev);
+        let ahead_behind = repo.graph_ahead_behind(from, to)?;
+        result.push((branch, ahead_behind.0, ahead_behind.1))
+    }
+
+    Ok(result)
+}
+
+pub fn fast_forward<P: AsRef<Path>>(path: &P, branch: &String) -> Result<(), Error> {
+    let repo = Repository::open(path)?;
 
     let fetch_head = repo.find_reference("FETCH_HEAD")?;
     let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
@@ -131,9 +160,8 @@ impl From<&Commit<'_>> for CommitInfo {
     }
 }
 
-pub fn behind_commits(path: &str) -> Result<Vec<CommitInfo>, Error> {
+pub fn behind_commits(path: &str, branch: &String) -> Result<Vec<CommitInfo>, Error> {
     let repo = Repository::open(path)?;
-    let branch = current_branch(&repo)?;
     let rev = repo.revparse(format!("HEAD..origin/{}", branch).as_str())?;
     let (from, to) = rev_from_to(&rev);
     let mut revwalk = repo.revwalk()?;

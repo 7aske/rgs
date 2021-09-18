@@ -93,7 +93,7 @@ impl Rgs {
                     for proj in &grp.projs {
                         let repo = Path::new(&proj.path).to_path_buf();
                         if proj.ahead_behind.1 != 0 {
-                            self.parse_and_notify(&repo);
+                            self.parse_and_notify(&repo, &proj.current_branch);
                         }
                     }
                 }
@@ -104,15 +104,14 @@ impl Rgs {
     }
 
     #[inline(always)]
-    fn parse_and_notify(&self, repo: &PathBuf) {
+    fn parse_and_notify(&self, repo: &PathBuf, branch: &String) {
         const SUMMARY_ABBR_LEN: usize = 60;
         const MAX_COMMITS_BODY: usize = 10;
-        let branch = git::current_branch_from_path(repo).unwrap_or_default();
         if self.opts.watch  {
             println!("{}:{}\n", repo.to_str().unwrap(), branch);
         }
 
-        let commits_opt = git::behind_commits(&repo.to_str().unwrap());
+        let commits_opt = git::behind_commits(&repo.to_str().unwrap(), branch);
         match commits_opt {
             Ok(commits) => {
                 if !commits.is_empty() {
@@ -174,9 +173,10 @@ impl Rgs {
 
         loop {
             for repo in &self.opts.repos {
-                let fetch = git::fetch(repo.to_str().unwrap());
+                let branch = git::current_branch_from_path(repo).unwrap_or_default();
+                let fetch = git::fetch(repo.to_str().unwrap(), &branch);
                 if fetch.is_ok() {
-                    self.parse_and_notify(repo);
+                    self.parse_and_notify(repo, &branch);
                 } else if !fetch.is_ok() && self.opts.repos.len() == 1 {
                     return Err(RgsError::from(fetch.unwrap_err().message()));
                 }
@@ -242,10 +242,11 @@ impl Rgs {
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
+                // let branch = String::from(&self.groups[i].projs[j].current_branch);
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    git::fetch(&path);
+                    git::fetch_all(&path);
                     tx.send((i, j, now.elapsed().as_millis() as u64)).unwrap()
                 });
             }
@@ -267,12 +268,14 @@ impl Rgs {
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
+                let branch  = String::from(&self.groups[i].projs[j].current_branch);
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
                     let modified = git::is_clean(&path);
-                    let ahead_behind = git::ahead_behind(&path).unwrap_or((0, 0));
-                    tx.send((i, j, modified, ahead_behind, now.elapsed().as_millis() as u64)).unwrap();
+                    let ahead_behind = git::ahead_behind(&path, &branch).unwrap_or((0, 0));
+                    let ahead_behind_remote = git::ahead_behind_remote(&path).unwrap_or(vec![]);
+                    tx.send((i, j, modified, ahead_behind, ahead_behind_remote, now.elapsed().as_millis() as u64)).unwrap();
                 });
             }
         }
@@ -280,10 +283,13 @@ impl Rgs {
         drop(tx);
         self.pool.join();
 
-        for (i, j, modified, ahead_behind, time) in rx {
+        for (i, j, modified, ahead_behind, ahead_behind_remote, time) in rx {
             let proj = &mut self.groups[i].projs[j];
             proj.modified = modified;
             proj.ahead_behind = ahead_behind;
+            for data in ahead_behind_remote {
+                proj.remote_ahead_behind.insert(data.0, (data.1, data.2));
+            }
             proj.time += time;
         }
     }
@@ -381,10 +387,11 @@ impl Rgs {
                 }
 
                 let path = String::from(&proj.path);
+                let branch = String::from(&proj.current_branch);
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    let result = git::fast_forward(&path);
+                    let result = git::fast_forward(&path, &branch);
                     tx.send((i, j, now.elapsed().as_millis() as u64, result.is_ok())).unwrap()
                 });
             }

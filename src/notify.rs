@@ -16,7 +16,8 @@ pub fn notify(repo: &PathBuf, notify_body: &String) {
                 handle.wait_for_action(|id| {
                 match id {
                     "pull" => {
-                        let ff_res = git::fast_forward(repo);
+                        let branch = git::current_branch_from_path(repo).unwrap_or_default();
+                        let ff_res = git::fast_forward(repo, &branch);
                         if ff_res.is_ok() {
                             Notification::new()
                                 .summary("cgs fast-forward")
