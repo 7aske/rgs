@@ -269,12 +269,17 @@ impl Rgs {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
                 let branch  = String::from(&self.groups[i].projs[j].current_branch);
+                let branches  = self.opts.branches;
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
                     let modified = git::is_clean(&path);
                     let ahead_behind = git::ahead_behind(&path, &branch).unwrap_or((0, 0));
-                    let ahead_behind_remote = git::ahead_behind_remote(&path).unwrap_or(vec![]);
+                    let ahead_behind_remote = if branches {
+                        git::ahead_behind_remote(&path).unwrap_or(vec![])
+                    }  else {
+                        vec![]
+                    };
                     tx.send((i, j, modified, ahead_behind, ahead_behind_remote, now.elapsed().as_millis() as u64)).unwrap();
                 });
             }
