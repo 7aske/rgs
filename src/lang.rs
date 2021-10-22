@@ -1,7 +1,5 @@
 use crate::git;
 use std::collections::HashMap;
-use git2::Error;
-use std::borrow::Borrow;
 
 #[derive(Clone, Savefile)]
 pub struct Project {
@@ -54,22 +52,6 @@ impl Project {
     pub fn is_ahead_behind(&self) -> bool {
         self.ahead_behind.0 > 0 || self.ahead_behind.1 > 0
     }
-
-    #[inline]
-    pub fn fetch(&self) -> Result<(), Error> {
-        git::fetch(&self.path, &self.current_branch)
-    }
-
-    #[inline]
-    pub fn fetch_branch(&self, branch: &String) -> Result<(), Error> {
-        git::fetch(&self.path, branch)
-    }
-
-    #[inline]
-    pub fn fetch_all(&self) {
-        git::fetch_all(&self.path)
-    }
-
 }
 
 

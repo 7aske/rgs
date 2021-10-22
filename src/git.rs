@@ -2,7 +2,6 @@ use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks,
 use std::env;
 use std::path::{Path};
 use git2::build::CheckoutBuilder;
-use std::collections::HashMap;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -85,8 +84,8 @@ pub fn fetch(path: &str, branch: &String) -> Result<(), Error> {
         Ok(_) => {
             eprintln!("fetching {}:{}", path, branch)
         }
-        Err(_) => {
-            eprintln!("error fetching {}:{}", path, branch)
+        Err(e) => {
+            eprintln!("error fetching {}:{} - {}", path, branch, e.message())
         }
     }
     Ok(())

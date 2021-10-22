@@ -20,7 +20,7 @@ pub struct CodeRc {
 #[structopt(name = "rgs",
 about = "Batch repository check tool (github.com/7aske/rgs)",
 author = "Nikola Tasić - 7aske.com",
-version = "1.0.6")]
+version = env!("CARGO_PKG_VERSION"))]
 pub struct RgsOptStruct {
     #[structopt(short = "c", long = "code", env, help = "override CODE variable")]
     pub code: String,
