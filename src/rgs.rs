@@ -107,7 +107,7 @@ impl Rgs {
     fn parse_and_notify(&self, repo: &PathBuf, branch: &String) {
         const SUMMARY_ABBR_LEN: usize = 60;
         const MAX_COMMITS_BODY: usize = 10;
-        if self.opts.watch  {
+        if self.opts.watch {
             println!("{}:{}\n", repo.to_str().unwrap(), branch);
         }
 
@@ -174,7 +174,7 @@ impl Rgs {
         loop {
             for repo in &self.opts.repos {
                 let branch = git::current_branch_from_path(repo).unwrap_or_default();
-                let fetch = git::fetch(repo.to_str().unwrap(), &branch);
+                let fetch = git::fetch(repo.to_str().unwrap(), &String::from("origin"), &branch);
                 if fetch.is_ok() {
                     self.parse_and_notify(repo, &branch);
                 } else if !fetch.is_ok() && self.opts.repos.len() == 1 {
@@ -268,8 +268,8 @@ impl Rgs {
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let path = String::from(&self.groups[i].projs[j].path);
-                let branch  = String::from(&self.groups[i].projs[j].current_branch);
-                let branches  = self.opts.branches;
+                let branch = String::from(&self.groups[i].projs[j].current_branch);
+                let branches = self.opts.branches;
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
@@ -277,7 +277,7 @@ impl Rgs {
                     let ahead_behind = git::ahead_behind(&path, &branch).unwrap_or((0, 0));
                     let ahead_behind_remote = if branches {
                         git::ahead_behind_remote(&path).unwrap_or(vec![])
-                    }  else {
+                    } else {
                         vec![]
                     };
                     tx.send((i, j, modified, ahead_behind, ahead_behind_remote, now.elapsed().as_millis() as u64)).unwrap();
@@ -293,7 +293,7 @@ impl Rgs {
             proj.modified = modified;
             proj.ahead_behind = ahead_behind;
             for data in ahead_behind_remote {
-                proj.remote_ahead_behind.insert(data.0, (data.1, data.2));
+                proj.remote_ahead_behind.insert(format!("{}/{}", data.0, data.1), (data.2, data.3));
             }
             proj.time += time;
         }

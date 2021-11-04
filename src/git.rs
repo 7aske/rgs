@@ -47,15 +47,17 @@ pub fn fetch_all(path: &str) {
         return;
     }
     let repo = repo.unwrap();
-    for branch in repo.branches(Option::from(BranchType::Local)).unwrap() {
-        let branch = branch.unwrap();
-        let branch = branch.0.name().unwrap().unwrap();
-        let branch = String::from(branch);
-        fetch(path, &branch);
+    for remote in repo.remotes().unwrap().iter() {
+        for branch in repo.branches(Option::from(BranchType::Local)).unwrap() {
+            let branch = branch.unwrap();
+            let branch = branch.0.name().unwrap().unwrap();
+            let branch = String::from(branch);
+            fetch(path, &String::from(remote.unwrap()), &branch);
+        }
     }
 }
 
-pub fn fetch(path: &str, branch: &String) -> Result<(), Error> {
+pub fn fetch(path: &str, remote: &String, branch: &String) -> Result<(), Error> {
     let repo = Repository::open(path)?;
     let mut callbacks = RemoteCallbacks::default();
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
@@ -74,18 +76,18 @@ pub fn fetch(path: &str, branch: &String) -> Result<(), Error> {
     });
     let mut fetch_opts = FetchOptions::default();
     fetch_opts.remote_callbacks(callbacks);
-    let remote = repo.find_remote("origin");
-    if remote.is_err() {
-        let err_msg = format!("error fetching {}:{} - no remote 'origin'", path, branch);
+    let rmt = repo.find_remote(remote);
+    if rmt.is_err() {
+        let err_msg = format!("error fetching {}:{} - no remote '{}'", path, branch, remote);
         eprintln!("{}", err_msg);
         return Err(Error::from_str(err_msg.as_str()));
     }
-    match remote.unwrap().fetch(&[String::from(branch)], Option::Some(&mut fetch_opts), None) {
+    match rmt.unwrap().fetch(&[String::from(branch)], Option::Some(&mut fetch_opts), None) {
         Ok(_) => {
-            eprintln!("fetching {}:{}", path, branch)
+            eprintln!("fetching {}:{}/{}", path, remote, branch)
         }
         Err(e) => {
-            eprintln!("error fetching {}:{} - {}", path, branch, e.message())
+            eprintln!("error fetching {}:{}/{} - {}", path, remote, branch, e.message())
         }
     }
     Ok(())
@@ -106,17 +108,21 @@ pub fn ahead_behind(path: &str, branch: &String) -> Result<(usize, usize), Error
 }
 
 
-pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, usize, usize)>, Error> {
+pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usize)>, Error> {
     let repo = Repository::open(path)?;
     let mut result = vec![];
     for branch in repo.branches(Option::Some(BranchType::Local))? {
         let branch = branch.unwrap();
         let branch = branch.0.name().unwrap().unwrap();
         let branch = String::from(branch);
-        let rev = repo.revparse(format!("{branch}..origin/{branch}", branch=branch).as_str())?;
-        let (from, to) = rev_from_to(&rev);
-        let ahead_behind = repo.graph_ahead_behind(from, to)?;
-        result.push((branch, ahead_behind.0, ahead_behind.1))
+        for remote in repo.remotes().unwrap().iter() {
+            if remote.is_some() {
+                let rev = repo.revparse(format!("{branch}..{remote}/{branch}", remote = remote.unwrap(), branch = branch).as_str())?;
+                let (from, to) = rev_from_to(&rev);
+                let ahead_behind = repo.graph_ahead_behind(from, to)?;
+                result.push((String::from(remote.unwrap()), branch.clone(), ahead_behind.0, ahead_behind.1))
+            }
+        }
     }
 
     Ok(result)

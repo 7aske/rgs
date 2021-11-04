@@ -171,7 +171,7 @@ fn filter_stub(_: &&Project) -> bool {
 }
 
 fn filter_modification(p: &&Project) -> bool {
-    p.modified > 0 || p.ahead_behind.0 > 0 || p.ahead_behind.1 > 0 || p.fast_forwarded
+    !p.is_clean() || p.fast_forwarded
 }
 
 fn print_stub(_: &Project) {}
@@ -221,7 +221,8 @@ fn print_extra(p: &Project) {
 
 fn print_branches(p: &Project, maxlen: usize) {
     for key in p.remote_ahead_behind.keys() {
-        if *key != p.current_branch {
+        // Do not duplicate showing current remote/branch combination twice
+        if *key != p.current_branch && *key != format!("origin/{}", p.current_branch) {
             let ahead_behind = p.remote_ahead_behind.get(key).unwrap();
             if ahead_behind.0 > 0 || ahead_behind.1 > 0 {
                 let ahead = format!("{}{:3}", SYMBOL_AHEAD, ahead_behind.0).color(COLOR_AHEAD);

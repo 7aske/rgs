@@ -51,6 +51,7 @@ impl Project {
     #[inline]
     pub fn is_ahead_behind(&self) -> bool {
         self.ahead_behind.0 > 0 || self.ahead_behind.1 > 0
+            || self.remote_ahead_behind.iter().any(|x| x.0.ends_with(self.current_branch.clone().as_str()) && (x.1.0 > 0 || x.1.1 > 0))
     }
 }
 
