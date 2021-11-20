@@ -7,6 +7,7 @@ pub struct Project {
     pub grp_name: String,
     pub path: String,
     pub current_branch: String,
+    pub branches: Vec<String>,
     #[savefile_ignore]
     pub modified: usize,
     #[savefile_ignore]
@@ -35,6 +36,7 @@ impl Project {
             path: String::from(path),
             grp_name: String::from(grp_name),
             current_branch: git::current_branch_from_path(path).unwrap_or_default(),
+            branches: git::branches(path),
             modified: 0,
             ahead_behind: (0, 0),
             remote_ahead_behind: HashMap::new(),

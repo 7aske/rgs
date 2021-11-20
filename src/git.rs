@@ -2,6 +2,7 @@ use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks,
 use std::env;
 use std::path::{Path};
 use git2::build::CheckoutBuilder;
+use colored::Colorize;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -39,6 +40,23 @@ fn current_branch(repo: &Repository) -> Result<String, Error> {
 pub fn current_branch_from_path<P: AsRef<Path>>(path: P) -> Result<String, Error> {
     let repo = Repository::open(path)?;
     current_branch(&repo)
+}
+
+pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
+    let repo = Repository::open(path);
+    let mut result = vec![];
+    if repo.is_err() { return result; }
+    let repo = repo.unwrap();
+    let branches = repo.branches(Option::None);
+    if branches.is_err() { return result; }
+    for branch in branches.unwrap() {
+        if branch.is_ok() {
+            let name = String::from(branch.unwrap().0.name().unwrap().unwrap());
+            result.push(name);
+        }
+    }
+
+    return result;
 }
 
 pub fn fetch_all(path: &str) {
@@ -79,15 +97,17 @@ pub fn fetch(path: &str, remote: &String, branch: &String) -> Result<(), Error> 
     let rmt = repo.find_remote(remote);
     if rmt.is_err() {
         let err_msg = format!("error fetching {}:{} - no remote '{}'", path, branch, remote);
-        eprintln!("{}", err_msg);
+        eprintln!("{}", err_msg.red());
         return Err(Error::from_str(err_msg.as_str()));
     }
     match rmt.unwrap().fetch(&[String::from(branch)], Option::Some(&mut fetch_opts), None) {
         Ok(_) => {
-            eprintln!("fetching {}:{}/{}", path, remote, branch)
+            let msg = format!("fetching {}:{}/{}", path, remote, branch);
+            eprintln!("{}", msg.green());
         }
         Err(e) => {
-            eprintln!("error fetching {}:{}/{} - {}", path, remote, branch, e.message())
+            let err_msg = format!("error fetching {}:{}/{} - {}", path, remote, branch, e.message());
+            eprintln!("{}", err_msg.red());
         }
     }
     Ok(())

@@ -175,6 +175,7 @@ fn filter_modification(p: &&Project) -> bool {
 }
 
 fn print_stub(_: &Project) {}
+
 fn print_branch_stub(_: &Project, _: usize) {}
 
 fn print_default(p: &Project, grp_len: usize, proj_len: usize, branch_len: usize) {
@@ -216,7 +217,7 @@ fn print_dir(p: &Project, _: usize, _: usize, _: usize) {
 
 fn print_extra(p: &Project) {
     let time = p.time.to_string() + "ms";
-    print!("{}", time.black());
+    print!("{:5}", time.black());
 }
 
 fn print_branches(p: &Project, maxlen: usize) {
@@ -229,7 +230,7 @@ fn print_branches(p: &Project, maxlen: usize) {
                 let behind = format!("{}{:3}", SYMBOL_BEHIND, ahead_behind.1).color(COLOR_BEHIND);
                 let ahead_behind_str = format!("{:4} {:4}", ahead, behind);
                 let branch = format!("{}", key).color(COLOR_BRANCH);
-                print!("{:size$} {} ", branch, ahead_behind_str, size=maxlen);
+                print!("{:size$} {} ", branch, ahead_behind_str, size = maxlen);
             }
         }
     }
@@ -282,8 +283,16 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             proj_maxlen = proj.name.len();
         }
 
-        if proj.current_branch.len() > branch_maxlen {
-            branch_maxlen = proj.current_branch.len();
+        for branch in &proj.branches {
+            if branch.len() > branch_maxlen {
+                let ahead_behind = proj.remote_ahead_behind.get(branch.as_str());
+                if ahead_behind.is_some(){
+                    let ahead_behind = ahead_behind.unwrap();
+                    if ahead_behind.0 > 0 || ahead_behind.1 > 0 {
+                        branch_maxlen = branch.len();
+                    }
+                }
+            }
         }
     }
 
