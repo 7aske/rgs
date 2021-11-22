@@ -1,3 +1,4 @@
+PREFIX ?= /usr
 BIN=./target/release/rgs
 
 default_recipe: run
@@ -10,7 +11,7 @@ release: src/main.rs
 	command -v cargo-strip && cargo-strip
 
 install: release
-	sudo cp $(BIN) /usr/bin/cgs
+	sudo install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/cgs
 
 clean:
 	cargo clean
