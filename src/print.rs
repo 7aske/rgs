@@ -283,6 +283,10 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             proj_maxlen = proj.name.len();
         }
 
+        if proj.current_branch.len() > branch_maxlen {
+            branch_maxlen = proj.current_branch.len();
+        }
+
         for branch in &proj.branches {
             if branch.len() > branch_maxlen {
                 let ahead_behind = proj.remote_ahead_behind.get(branch.as_str());

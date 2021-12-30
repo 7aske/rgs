@@ -11,11 +11,6 @@ use serde_derive::Deserialize;
 use toml::value::Table;
 
 
-#[derive(Debug, Deserialize)]
-pub struct CodeRc {
-    profiles: Vec<RgsOptStruct>,
-}
-
 #[derive(Debug, StructOpt, Deserialize)]
 #[structopt(name = "rgs",
 about = "Batch repository check tool (github.com/7aske/rgs)",
