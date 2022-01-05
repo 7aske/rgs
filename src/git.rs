@@ -1,8 +1,10 @@
-use git2::{Repository, Status, Error, BranchType, FetchOptions, RemoteCallbacks, Cred, Revspec, Oid, Sort, Commit, Time};
 use std::env;
-use std::path::{Path};
-use git2::build::CheckoutBuilder;
+use std::path::Path;
+
 use colored::Colorize;
+use git2::{BranchType, Commit, Cred, Error, FetchOptions, Oid, RemoteCallbacks, Repository, Revspec, Sort, Status, Time};
+use git2::BranchType::{Local};
+use git2::build::CheckoutBuilder;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -131,17 +133,28 @@ pub fn ahead_behind(path: &str, branch: &String) -> Result<(usize, usize), Error
 pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usize)>, Error> {
     let repo = Repository::open(path)?;
     let mut result = vec![];
-    for branch in repo.branches(Option::Some(BranchType::Local))? {
+    let remotes = repo.remotes()?;
+    let remotes = remotes
+        .iter()
+        .flatten()
+        .collect::<Vec<&str>>();
+    for branch in repo.branches(Option::Some(Local))? {
         let branch = branch.unwrap();
         let branch = branch.0.name().unwrap().unwrap();
         let branch = String::from(branch);
-        for remote in repo.remotes().unwrap().iter() {
-            if remote.is_some() {
-                let rev = repo.revparse(format!("{branch}..{remote}/{branch}", remote = remote.unwrap(), branch = branch).as_str())?;
-                let (from, to) = rev_from_to(&rev);
-                let ahead_behind = repo.graph_ahead_behind(from, to)?;
-                result.push((String::from(remote.unwrap()), branch.clone(), ahead_behind.0, ahead_behind.1))
+        for remote in &remotes {
+            let spec_str = format!("{branch}..{remote}/{branch}", remote = *remote, branch = branch);
+            let rev = repo.revparse(spec_str.as_str());
+            if rev.is_err() {
+                continue;
             }
+            let (from, to) = rev_from_to(&rev.unwrap());
+            let ahead_behind = repo.graph_ahead_behind(from, to);
+            if ahead_behind.is_err() {
+                continue;
+            }
+            let ahead_behind = ahead_behind.unwrap();
+            result.push((String::from(*remote), branch.clone(), ahead_behind.0, ahead_behind.1))
         }
     }
 

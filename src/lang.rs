@@ -53,7 +53,9 @@ impl Project {
     #[inline]
     pub fn is_ahead_behind(&self) -> bool {
         self.ahead_behind.0 > 0 || self.ahead_behind.1 > 0
-            || self.remote_ahead_behind.iter().any(|x| x.0.ends_with(self.current_branch.clone().as_str()) && (x.1.0 > 0 || x.1.1 > 0))
+            // If the branch is on origin and there are differences. I an generally most
+            // interested in changes on the current remote while working.
+            || self.remote_ahead_behind.iter().any(|x| x.0.starts_with("origin") && (x.1.0 > 0 || x.1.1 > 0))
     }
 }
 
