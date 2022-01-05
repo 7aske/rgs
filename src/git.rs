@@ -49,7 +49,7 @@ pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
     let mut result = vec![];
     if repo.is_err() { return result; }
     let repo = repo.unwrap();
-    let branches = repo.branches(Option::None);
+    let branches = repo.branches(Option::Some(BranchType::Local));
     if branches.is_err() { return result; }
     for branch in branches.unwrap() {
         if branch.is_ok() {
