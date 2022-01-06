@@ -54,10 +54,7 @@ pub struct RgsOptStruct {
 
 #[derive(StructOpt, Debug, Deserialize)]
 pub struct RgsWatchOptStruct {
-    #[structopt(long = "watch", short = "w", help = "watch for changes")]
-    pub watch: bool,
-
-    #[structopt(name = "REPOS", required_if("watch", "true"), help = "list of repositories to watch")]
+    #[structopt(short = "w", long = "watch", help = "list of repositories to watch")]
     pub repos: Vec<String>,
 
     #[structopt(short = "T", long = "timeout", default_value = "60", help = "timeout in seconds between git fetches")]
@@ -228,7 +225,7 @@ impl From<&RgsOptStruct> for RgsOpt {
         let threads = opt.threads.unwrap_or(num_cpus::get());
         let summary_type = SummaryType::from_occurrences(opt.verbose as u64);
 
-        let watch = opt.watch_options.watch;
+        let watch = opt.watch_options.repos.len() > 0;
         let repos = opt.watch_options.repos.clone().iter()
             .map(|repo| {
                 let repo_path = PathBuf::from(repo);
