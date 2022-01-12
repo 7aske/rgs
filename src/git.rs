@@ -44,6 +44,7 @@ pub fn current_branch_from_path<P: AsRef<Path>>(path: P) -> Result<String, Error
     current_branch(&repo)
 }
 
+/// Lists all Local branches for a repository in a path.
 pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
     let repo = Repository::open(path);
     let mut result = vec![];
@@ -61,25 +62,22 @@ pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
     return result;
 }
 
-pub fn fetch_all(path: &str) {
-    let repo = Repository::open(path);
-    if repo.is_err() {
-        return;
-    }
-    let repo = repo.unwrap();
+/// Performs `git fetch --all`.
+pub fn fetch_all(path: &str) -> Result<(), Error>{
+    let repo = Repository::open(path)?;
     for remote in repo.remotes().unwrap().iter() {
-        for branch in repo.branches(Option::from(BranchType::Local)).unwrap() {
-            let branch = branch.unwrap();
-            let branch = branch.0.name().unwrap().unwrap();
-            let branch = String::from(branch);
-            fetch(path, &String::from(remote.unwrap()), &branch);
-        }
+        fetch(path, &String::from(remote.unwrap()), &[])?;
     }
+    Ok(())
 }
 
-pub fn fetch(path: &str, remote: &String, branch: &String) -> Result<(), Error> {
+/// Wrapper for fetching from a remote.
+pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Error> {
     let repo = Repository::open(path)?;
+
     let mut callbacks = RemoteCallbacks::default();
+    // @Incomplete Bare-bones working credentials callback capable of handling pubkey authentication
+    // using the default private key generated from ssh-keygen command.
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
         let priv_key_path = format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
         let priv_key = Path::new(&priv_key_path);
@@ -94,25 +92,15 @@ pub fn fetch(path: &str, remote: &String, branch: &String) -> Result<(), Error> 
             Cred::default()
         };
     });
+
+    // Only thing needed apart from the defaults is the credentials callback.
     let mut fetch_opts = FetchOptions::default();
     fetch_opts.remote_callbacks(callbacks);
-    let rmt = repo.find_remote(remote);
-    if rmt.is_err() {
-        let err_msg = format!("error fetching {}:{} - no remote '{}'", path, branch, remote);
-        eprintln!("{}", err_msg.red());
-        return Err(Error::from_str(err_msg.as_str()));
-    }
-    match rmt.unwrap().fetch(&[String::from(branch)], Option::Some(&mut fetch_opts), None) {
-        Ok(_) => {
-            let msg = format!("fetching {}:{}/{}", path, remote, branch);
-            eprintln!("{}", msg.green());
-        }
-        Err(e) => {
-            let err_msg = format!("error fetching {}:{}/{} - {}", path, remote, branch, e.message());
-            eprintln!("{}", err_msg.red());
-        }
-    }
-    Ok(())
+
+    let mut rmt = repo.find_remote(remote)?;
+    let msg = format!("fetching {}:{}", path, remote);
+    eprintln!("{}", msg.green());
+    rmt.fetch(branches, Option::Some(&mut fetch_opts), None)
 }
 
 #[inline(always)]

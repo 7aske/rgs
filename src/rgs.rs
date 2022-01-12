@@ -16,6 +16,7 @@ use std::fmt::{Display, Formatter};
 use chrono::{NaiveDateTime};
 use crate::git;
 use crate::notify::notify;
+use colored::*;
 
 extern crate savefile;
 
@@ -174,7 +175,7 @@ impl Rgs {
         loop {
             for repo in &self.opts.repos {
                 let branch = git::current_branch_from_path(repo).unwrap_or_default();
-                let fetch = git::fetch(repo.to_str().unwrap(), &String::from("origin"), &branch);
+                let fetch = git::fetch(repo.to_str().unwrap(), &String::from("origin"), &[&branch]);
                 if fetch.is_ok() {
                     self.parse_and_notify(repo, &branch);
                 } else if !fetch.is_ok() && self.opts.repos.len() == 1 {
@@ -246,7 +247,11 @@ impl Rgs {
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    git::fetch_all(&path);
+                    let res = git::fetch_all(&path);
+                    if res.is_err() {
+                        let err_msg = format!("error fetching {} - {}", path, res.err().unwrap().message());
+                        eprintln!("{}", err_msg.red());
+                    }
                     tx.send((i, j, now.elapsed().as_millis() as u64)).unwrap()
                 });
             }
@@ -396,8 +401,12 @@ impl Rgs {
                 let tx = Sender::clone(&tx);
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    let result = git::fast_forward(&path, &branch);
-                    tx.send((i, j, now.elapsed().as_millis() as u64, result.is_ok())).unwrap()
+                    let res= git::fast_forward(&path, &branch);
+                    if res.is_err() {
+                        let err_msg = format!("error fast-forwarding {}:{} - {}", path, branch, res.as_ref().err().unwrap().message());
+                        eprintln!("{}", err_msg.red());
+                    }
+                    tx.send((i, j, now.elapsed().as_millis() as u64, res.is_ok())).unwrap()
                 });
             }
         }
