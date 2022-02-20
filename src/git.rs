@@ -1,10 +1,13 @@
-use std::env;
-use std::path::Path;
+use std::{env, fs};
+use std::path::{Path, PathBuf};
 
 use colored::Colorize;
-use git2::{BranchType, Commit, Cred, Error, FetchOptions, Oid, RemoteCallbacks, Repository, Revspec, Sort, Status, Time};
+use git2::{BranchType, Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, Repository, Revspec, Sort, Status, Time};
 use git2::BranchType::{Local};
 use git2::build::CheckoutBuilder;
+use http::Uri;
+use http::uri::InvalidUri;
+use ssh_config::SSHConfig;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -71,30 +74,107 @@ pub fn fetch_all(path: &str) -> Result<(), Error>{
     Ok(())
 }
 
+fn expand_tilde<P: AsRef<Path>>(path_user_input: P) -> PathBuf {
+    let p = path_user_input.as_ref();
+    if !p.starts_with("~") {
+        return p.to_path_buf();
+    }
+
+    let home = env::var("HOME").unwrap();
+
+    if p == Path::new("~") {
+        return PathBuf::from(home);
+    }
+
+    return PathBuf::from(home).join(p.strip_prefix("~").unwrap());
+}
+
+#[inline(always)]
+fn parse_url(url_string: &str) -> Result<Uri, InvalidUri> {
+    let mut default_schema =  String::from("ssh://");
+    default_schema.push_str(url_string);
+    default_schema.parse::<Uri>()
+}
+
 /// Wrapper for fetching from a remote.
 pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Error> {
     let repo = Repository::open(path)?;
 
     let mut callbacks = RemoteCallbacks::default();
-    // @Incomplete Bare-bones working credentials callback capable of handling pubkey authentication
-    // using the default private key generated from ssh-keygen command.
-    callbacks.credentials(|_url, username_from_url, _allowed_types| {
-        let priv_key_path = format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
-        let priv_key = Path::new(&priv_key_path);
-        return if username_from_url.is_some() && priv_key.exists() {
+    callbacks.credentials(|url_str, username_from_url, _allowed_types| {
+        // If the available type is SSH we do additional parsing
+        if _allowed_types.contains(CredentialType::SSH_KEY) {
+
+            let config_path_string = expand_tilde("~/.ssh/config");
+            let config_path = Path::new(&config_path_string);
+            // If the config file is not present we continue with the default
+            // configuration.
+            if !config_path.exists() {
+                return Cred::ssh_key_from_agent(username_from_url.unwrap());
+            }
+
+            // Parse the remote url into the Uri struct so that we can extract
+            // the host required to match SSH config file sections.
+            let url = parse_url(url_str);
+            if url.is_err() {
+                // If we fail I guess we return the default agent configuration
+                eprintln!("{}", url.err().unwrap().to_string().red());
+                return Cred::ssh_key_from_agent(username_from_url.unwrap());
+            }
+            let url = url.unwrap();
+
+            // Read the config file. If in any case we fail return the default
+            // ssh-agent configuration.
+            let config_str = fs::read_to_string(config_path);
+            if config_str.is_err() {
+                return Cred::ssh_key_from_agent(username_from_url.unwrap());
+            }
+            let config_str = config_str.unwrap();
+
+            let config = SSHConfig::parse_str(config_str.as_str());
+            if config.is_err() {
+                return Cred::ssh_key_from_agent(username_from_url.unwrap());
+            }
+            let config = config.unwrap();
+            let host_config = config.query(url.host().unwrap());
+
+            // We care only about two ConfigKeys - User nad IdentityFile.
+
+            // First we parse the identity file from the configuration or
+            // fallback to a sane default.
+            let identity_file = host_config["IdentityFile"];
+            let priv_key_path =  if identity_file.is_empty() {
+                expand_tilde(PathBuf::from("~/.ssh/id_rsa"))
+            } else {
+                expand_tilde(PathBuf::from(identity_file))
+            };
+
+            // Second is the User. If it is not overridden we default to the
+            // one provided by the remote URL.
+            let user = host_config["User"];
+            let user =  if user.is_empty() {
+                username_from_url.unwrap()
+            } else {
+                user
+            };
+
+            let priv_key = Path::new(&priv_key_path);
             Cred::ssh_key(
-                username_from_url.unwrap(),
+                user,
                 None,
                 priv_key,
                 None,
             )
         } else {
             Cred::default()
-        };
+        }
     });
 
     // Only thing needed apart from the defaults is the credentials callback.
     let mut fetch_opts = FetchOptions::default();
+    let mut proxy_opts = ProxyOptions::default();
+    proxy_opts.auto();
+    fetch_opts.proxy_options(proxy_opts);
     fetch_opts.remote_callbacks(callbacks);
 
     let mut rmt = repo.find_remote(remote)?;

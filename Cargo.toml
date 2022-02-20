@@ -1,6 +1,6 @@
 [package]
 name = "rgs"
-version = "1.0.12"
+version = "1.0.13"
 authors = ["Nikola Tasic <ntasic7@gmail.com>"]
 edition = "2018"
 
@@ -20,6 +20,8 @@ serde_derive = "1.0.126"
 toml = "0.5.8"
 chrono = "0.4.19"
 notify-rust = "4.5.2"
+ssh_config = "0.1.0"
+http = "0.2.6"
 
 [profile.release]
 opt-level=3
