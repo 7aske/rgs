@@ -2,12 +2,12 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 
 use colored::Colorize;
-use git2::{BranchType, Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, Repository, Revspec, Sort, Status, Time};
+use git2::{BranchType, Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, RemoteRedirect, Repository, Revspec, Sort, Status, Time};
 use git2::BranchType::{Local};
 use git2::build::CheckoutBuilder;
 use http::Uri;
 use http::uri::InvalidUri;
-use ssh_config::SSHConfig;
+use ssh_config::{SSHConfig};
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -136,26 +136,28 @@ pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Er
                 return Cred::ssh_key_from_agent(username_from_url.unwrap());
             }
             let config = config.unwrap();
+            let host = url.host();
+            if host.is_none() {
+                return Cred::ssh_key_from_agent(username_from_url.unwrap());
+            }
             let host_config = config.query(url.host().unwrap());
 
             // We care only about two ConfigKeys - User nad IdentityFile.
 
             // First we parse the identity file from the configuration or
             // fallback to a sane default.
-            let identity_file = host_config["IdentityFile"];
-            let priv_key_path =  if identity_file.is_empty() {
-                expand_tilde(PathBuf::from("~/.ssh/id_rsa"))
-            } else {
-                expand_tilde(PathBuf::from(identity_file))
+            let identity_file = host_config.get("IdentityFile");
+            let priv_key_path =  match identity_file {
+                None => expand_tilde(PathBuf::from("~/.ssh/id_rsa")),
+                Some(iden) => expand_tilde(PathBuf::from(iden))
             };
 
             // Second is the User. If it is not overridden we default to the
             // one provided by the remote URL.
-            let user = host_config["User"];
-            let user =  if user.is_empty() {
-                username_from_url.unwrap()
-            } else {
-                user
+            let user = host_config.get("User");
+            let user =  match user {
+                None => username_from_url.unwrap_or("git"),
+                Some(_user) => _user
             };
 
             let priv_key = Path::new(&priv_key_path);
@@ -175,6 +177,7 @@ pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Er
     let mut proxy_opts = ProxyOptions::default();
     proxy_opts.auto();
     fetch_opts.proxy_options(proxy_opts);
+    fetch_opts.follow_redirects(RemoteRedirect::All);
     fetch_opts.remote_callbacks(callbacks);
 
     let mut rmt = repo.find_remote(remote)?;
