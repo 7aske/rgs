@@ -68,7 +68,9 @@ impl Rgs {
 
     pub fn run(&mut self) -> Result<(), RgsError> {
         self.validate_code()?;
-        if self.opts.watch {
+        if self.opts.print_code {
+            println!("{}", self.opts.code);
+        } else if self.opts.watch {
             self.run_watch()?
         } else {
             self.load_repos();

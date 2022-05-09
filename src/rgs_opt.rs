@@ -19,6 +19,8 @@ version = env!("CARGO_PKG_VERSION"))]
 pub struct RgsOptStruct {
     #[structopt(short = "c", long = "code", env, help = "override CODE variable")]
     pub code: String,
+    #[structopt(short = "C", long = "print-code", help = "print CODE variable")]
+    pub print_code: bool,
     #[structopt(short = "v", long = "verbose", parse(from_occurrences), help = "print additional information")]
     pub verbose: u8,
     #[structopt(short = "i", long = "no-ignore", help = "don't read .codeignore file")]
@@ -109,10 +111,24 @@ impl RgsOptStruct {
     }
 
     pub fn load_profile(&mut self) {
-        if self.profile.is_none() {
+        let env_profile = env::var("RGS_PROFILE");
+        // if RGS_PROFILE and cli argument profile is not set we don't have
+        // anything to do.
+        if self.profile.is_none() && env_profile.is_err() {
             return;
         }
-        let profile = self.profile.as_ref().unwrap().as_str();
+
+        let profile = if env_profile.is_ok() {
+            env_profile.unwrap()
+        } else {
+            self.profile.clone().unwrap()
+        };
+
+        // If the RGS_PROFILE is set but it is set to an empty string, we don't
+        // have anything to do also.
+        if profile.is_empty() {
+            return;
+        }
 
         let location_config = Path::new(&env::var("HOME").unwrap()).join(".config").join("coderc");
         let location_home = Path::new(&env::var("HOME").unwrap()).join(".coderc");
@@ -127,8 +143,8 @@ impl RgsOptStruct {
 
         let config: toml::Value = toml::from_str(config_string.as_str()).unwrap();
         let config = config.as_table().unwrap();
-        if config.contains_key(profile) {
-            let config = config.get(profile).unwrap().as_table().unwrap();
+        if config.contains_key(&profile) {
+            let config = config.get(&profile).unwrap().as_table().unwrap();
             self.update_with(config);
         } else {
             eprintln!("cgs: profile '{}' not found", profile);
@@ -138,6 +154,7 @@ impl RgsOptStruct {
 
 pub struct RgsOpt {
     pub code: String,
+    pub print_code: bool,
     pub codeignore: Vec<Pattern>,
     pub codeignore_exclude: Vec<Pattern>,
     pub out_types: Vec<OutputType>,
@@ -189,6 +206,7 @@ fn parse_codeignore(code: &String, no_codeignore: bool) -> (Vec<Pattern>, Vec<Pa
 impl From<&RgsOptStruct> for RgsOpt {
     fn from(opt: &RgsOptStruct) -> Self {
         let code = String::from(&opt.code);
+        let print_code = opt.print_code;
 
         let (codeignore, codeignore_exclude) = parse_codeignore(&code, opt.no_ignore);
 
@@ -244,6 +262,7 @@ impl From<&RgsOptStruct> for RgsOpt {
 
         RgsOpt {
             code,
+            print_code,
             codeignore,
             codeignore_exclude,
             summary_type,
