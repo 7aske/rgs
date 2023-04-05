@@ -1,6 +1,6 @@
 [package]
 name = "rgs"
-version = "1.14.2"
+version = "1.14.3"
 authors = ["Nikola Tasic <ntasic7@gmail.com>"]
 edition = "2018"
 
@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 glob = "0.3.0"
 colored = "2.0.0"
-git2 = "0.14.2"
+git2 = "0.17.0"
 threadpool = "1.8.1"
 num_cpus = "1.13.0"
 savefile = "0.8.1"
@@ -22,6 +22,8 @@ chrono = "0.4.19"
 notify-rust = "4.5.2"
 ssh_config = "0.1.0"
 http = "0.2.6"
+openssl = { version = "0.10", features = ["vendored"] }
+
 
 [profile.release]
 opt-level=3
