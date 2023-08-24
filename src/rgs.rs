@@ -340,22 +340,6 @@ impl Rgs {
 
             if git::is_inside_work_tree(&path_str) {
 
-                // check if it is a link
-                match fs::read_link(path.clone()) {
-                    Ok(res) => {
-                        // if its not an absolute link treat it as an alias
-                        if !res.is_absolute() {
-                            return;
-                        }
-
-                        // if it is an absolute link within code directory treat it as an alias
-                        if res.starts_with(self.opts.code.as_str()) {
-                            return;
-                        }
-                    }
-                    Err(_) => {}
-                }
-
                 self.count += 1;
 
                 // last or new

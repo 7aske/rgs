@@ -1,6 +1,6 @@
 [package]
 name = "rgs"
-version = "1.14.3"
+version = "1.14.4"
 authors = ["Nikola Tasic <ntasic7@gmail.com>"]
 edition = "2018"
 
@@ -12,12 +12,12 @@ colored = "2.0.0"
 git2 = "0.17.0"
 threadpool = "1.8.1"
 num_cpus = "1.13.0"
-savefile = "0.8.1"
-savefile-derive = "0.8.1"
+savefile = "0.16.2"
+savefile-derive = "0.16.2"
 structopt = "0.3.22"
 serde = "1.0.126"
 serde_derive = "1.0.126"
-toml = "0.5.8"
+toml = "0.7.6"
 chrono = "0.4.19"
 notify-rust = "4.5.2"
 ssh_config = "0.1.0"
