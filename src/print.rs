@@ -253,15 +253,23 @@ fn summary_print(langs: &Vec<Group>, out_types: &Vec<OutputType>, sort: &SortTyp
             OutputType::Dir => {
                 print_fn = print_dir;
                 print_modification_fn = print_stub;
+                print_extra_fn = print_stub;
+                print_branches_fn = print_branch_stub;
             }
             OutputType::Time => {
-                print_extra_fn = print_extra;
+                if !out_types.contains(&OutputType::Dir) {
+                    print_extra_fn = print_extra;
+                }
             }
             OutputType::Modification => {
-                print_modification_fn = print_modification;
+                if !out_types.contains(&OutputType::Dir) {
+                    print_modification_fn = print_modification;
+                }
             }
             OutputType::Branches => {
-                print_branches_fn = print_branches;
+                if !out_types.contains(&OutputType::Dir) {
+                    print_branches_fn = print_branches;
+                }
             }
         }
     }
