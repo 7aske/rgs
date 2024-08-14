@@ -2,12 +2,12 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 
 use colored::Colorize;
-use git2::{BranchType, Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, RemoteRedirect, Repository, Revspec, Sort, Status, Time};
-use git2::BranchType::{Local};
+use git2::{Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, RemoteRedirect, Repository, Revspec, Sort, Status, Time};
+use git2::BranchType::Local;
 use git2::build::CheckoutBuilder;
 use http::Uri;
 use http::uri::InvalidUri;
-use ssh_config::{SSHConfig};
+use ssh_config::SSHConfig;
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
@@ -29,7 +29,7 @@ pub fn is_inside_work_tree(path: &str) -> bool {
 }
 
 fn current_branch(repo: &Repository) -> Result<String, Error> {
-    let branch = repo.branches(Option::from(BranchType::Local))?
+    let branch = repo.branches(Option::from(Local))?
         .into_iter()
         .map(|b| b.unwrap().0)
         .find(|b| b.is_head());
@@ -53,7 +53,7 @@ pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
     let mut result = vec![];
     if repo.is_err() { return result; }
     let repo = repo.unwrap();
-    let branches = repo.branches(Option::Some(BranchType::Local));
+    let branches = repo.branches(Some(Local));
     if branches.is_err() { return result; }
     for branch in branches.unwrap() {
         if branch.is_ok() {
@@ -142,13 +142,24 @@ pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Er
             }
             let host_config = config.query(url.host().unwrap());
 
-            // We care only about two ConfigKeys - User nad IdentityFile.
+            // We care only about two ConfigKeys - User and IdentityFile.
 
             // First we parse the identity file from the configuration or
             // fallback to a sane default.
             let identity_file = host_config.get("IdentityFile");
             let priv_key_path =  match identity_file {
-                None => expand_tilde(PathBuf::from("~/.ssh/id_rsa")),
+                None => {
+                    let paths = vec![
+                        "~/.ssh/id_rsa",
+                        "~/.ssh/id_ed25519",
+                        "~/.ssh/id_ecdsa",
+                        "~/.ssh/id_dsa",
+                    ];
+                    paths.iter()
+                        .map(|p| PathBuf::from(expand_tilde(p)))
+                        .find(|p| p.exists())
+                        .unwrap_or(PathBuf::from("~/.ssh/id_rsa"))
+                },
                 Some(iden) => expand_tilde(PathBuf::from(iden))
             };
 
@@ -183,7 +194,7 @@ pub fn fetch(path: &str, remote: &String, branches: &[&String]) -> Result<(), Er
     let mut rmt = repo.find_remote(remote)?;
     let msg = format!("fetching {}:{}", path, remote);
     eprintln!("{}", msg.green());
-    rmt.fetch(branches, Option::Some(&mut fetch_opts), None)
+    rmt.fetch(branches, Some(&mut fetch_opts), None)
 }
 
 #[inline(always)]
@@ -209,7 +220,7 @@ pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usi
         .iter()
         .flatten()
         .collect::<Vec<&str>>();
-    for branch in repo.branches(Option::Some(Local))? {
+    for branch in repo.branches(Some(Local))? {
         let branch = branch.unwrap();
         let branch = branch.0.name().unwrap().unwrap();
         let branch = String::from(branch);
@@ -232,20 +243,39 @@ pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usi
     Ok(result)
 }
 
-pub fn fast_forward<P: AsRef<Path>>(path: &P, branch: &String) -> Result<(), Error> {
-    let repo = Repository::open(path)?;
+pub fn fast_forward<P: AsRef<Path>>(path: &P, reference: &String) -> Result<(), Error> {
+    if is_clean(path.as_ref().to_str().unwrap()) > 0 {
+        return Ok(());
+    }
 
-    let fetch_head = repo.find_reference("FETCH_HEAD")?;
+    let repo = Repository::open(path)?;
+    let adjusted_remote_reference = if reference.contains("/") {
+        reference.clone()
+    } else {
+        format!("origin/{}", reference)
+    };
+    let adjusted_local_reference = if reference.contains("/") {
+        reference.split("/").last().unwrap().to_string()
+    } else {
+        reference.clone()
+    };
+
+    let remote_refname = format!("refs/remotes/{}", adjusted_remote_reference);
+    let local_refname = format!("refs/heads/{}", adjusted_local_reference);
+
+    let fetch_head = repo.find_reference(&remote_refname)?;
     let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
-    let analysis = repo.merge_analysis(&[&fetch_commit])?;
+    let mut local_head = repo.find_reference(&local_refname)?;
+
+    let analysis = repo.merge_analysis_for_ref(&local_head, &[&fetch_commit])?;
     if analysis.0.is_up_to_date() {
         Ok(())
     } else if analysis.0.is_fast_forward() {
-        let refname = format!("refs/heads/{}", branch);
-        let mut reference = repo.find_reference(&refname)?;
-        reference.set_target(fetch_commit.id(), "Fast-Forward")?;
-        repo.set_head(&refname)?;
-        repo.checkout_head(Some(CheckoutBuilder::default().force()))
+        local_head.set_target(fetch_commit.id(), "fast-forward")?;
+        repo.checkout_head(Some(CheckoutBuilder::default().force()))?;
+        Ok(())
+    } else if analysis.0.is_normal() {
+        Err(Error::from_str("Merge required"))
     } else {
         Err(Error::from_str("Unable to fast-forward"))
     }

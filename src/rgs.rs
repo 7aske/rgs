@@ -378,21 +378,25 @@ impl Rgs {
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let proj = &self.groups[i].projs[j];
-                if proj.ahead_behind.1 == 0 {
+                if proj.ahead_behind.1 == 0 && proj.remote_ahead_behind.iter().all(|x| x.1.1 == 0) {
                     continue;
                 }
 
                 let path = String::from(&proj.path);
-                let branch = String::from(&proj.current_branch);
                 let tx = Sender::clone(&tx);
+                let p = proj.clone();
                 self.pool.execute(move || {
                     let now = Instant::now();
-                    let res= git::fast_forward(&path, &branch);
-                    if res.is_err() {
-                        let err_msg = format!("error fast-forwarding {}:{} - {}", path, branch, res.as_ref().err().unwrap().message());
-                        eprintln!("{}", err_msg.red());
+                    let mut success = true;
+                    for ahead_behind in p.remote_ahead_behind.iter() {
+                        let res = git::fast_forward(&path, &ahead_behind.0);
+                        if res.is_err() {
+                            let err_msg = format!("error fast-forwarding {}:{} - {}", path, ahead_behind.0, res.as_ref().err().unwrap().message());
+                            eprintln!("{}", err_msg.red());
+                            success = false;
+                        }
                     }
-                    tx.send((i, j, now.elapsed().as_millis() as u64, res.is_ok())).unwrap()
+                    tx.send((i, j, now.elapsed().as_millis() as u64, success)).unwrap()
                 });
             }
         }
