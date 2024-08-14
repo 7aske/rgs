@@ -378,7 +378,7 @@ impl Rgs {
         for i in 0..self.groups.len() {
             for j in 0..self.groups[i].projs.len() {
                 let proj = &self.groups[i].projs[j];
-                if proj.ahead_behind.1 == 0 && proj.remote_ahead_behind.iter().all(|x| x.1.1 == 0) {
+                if proj.modified != 0 {
                     continue;
                 }
 
