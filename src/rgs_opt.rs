@@ -10,7 +10,6 @@ use structopt::StructOpt;
 use serde_derive::Deserialize;
 use toml::value::Table;
 
-
 #[derive(Debug, StructOpt, Deserialize)]
 #[structopt(name = "rgs",
 about = "Batch repository check tool (github.com/7aske/rgs)",
@@ -209,6 +208,7 @@ impl From<&RgsOptStruct> for RgsOpt {
         let print_code = opt.print_code;
 
         let (codeignore, codeignore_exclude) = parse_codeignore(&code, opt.no_ignore);
+        
 
         let mut out_types: HashSet<OutputType> = HashSet::new();
         if opt.all {
@@ -231,6 +231,9 @@ impl From<&RgsOptStruct> for RgsOpt {
         if opt.branches {
             out_types.insert(OutputType::Branches);
             out_types.insert(OutputType::Modification);
+        }
+        if opt.fetch {
+            out_types.insert(OutputType::Branches);
         }
 
         let out_types = Vec::from_iter(out_types);

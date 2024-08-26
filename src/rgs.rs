@@ -311,7 +311,7 @@ impl Rgs {
         if depth == 0 { return Ok(()); }
 
         for entry in fs::read_dir(path)? {
-            self.process_possible_git_dir(&entry.unwrap().path(), depth);
+            self.process_possible_git_dir(&entry?.path(), depth);
         };
         Ok(())
     }

@@ -1,20 +1,17 @@
-use std::{env, fs};
-use std::path::{Path, PathBuf};
-
 use colored::Colorize;
-use git2::{Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, RemoteRedirect, Repository, Revspec, Sort, Status, Time};
-use git2::BranchType::Local;
 use git2::build::CheckoutBuilder;
-use http::Uri;
+use git2::BranchType::Local;
+use git2::{Commit, Cred, CredentialType, Error, FetchOptions, Oid, ProxyOptions, RemoteCallbacks, RemoteRedirect, Repository, Revspec, Sort, StatusOptions, Time};
 use http::uri::InvalidUri;
+use http::Uri;
 use ssh_config::SSHConfig;
+use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 pub fn is_clean(path: &str) -> usize {
     return match Repository::open(path) {
-        Ok(repo) => {
-            let statuses = repo.statuses(None).unwrap();
-            statuses.iter().filter(|s| s.status() != Status::IGNORED).count()
-        }
+        Ok(repo) => repo.statuses(Some(&mut StatusOptions::default())).unwrap()
+            .iter().count(),
         Err(_) => 0
     };
 }
@@ -35,7 +32,7 @@ fn current_branch(repo: &Repository) -> Result<String, Error> {
         .find(|b| b.is_head());
     if branch.is_some() {
         let branch = branch.unwrap();
-        let branch = branch.name().unwrap().unwrap();
+        let branch = branch.name()?.unwrap();
         let branch = String::from(branch);
         return Ok(branch);
     }
@@ -68,7 +65,7 @@ pub fn branches<P: AsRef<Path>>(path: P) -> Vec<String> {
 /// Performs `git fetch --all`.
 pub fn fetch_all(path: &str) -> Result<(), Error>{
     let repo = Repository::open(path)?;
-    for remote in repo.remotes().unwrap().iter() {
+    for remote in repo.remotes()?.iter() {
         fetch(path, &String::from(remote.unwrap()), &[])?;
     }
     Ok(())
@@ -221,8 +218,8 @@ pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usi
         .flatten()
         .collect::<Vec<&str>>();
     for branch in repo.branches(Some(Local))? {
-        let branch = branch.unwrap();
-        let branch = branch.0.name().unwrap().unwrap();
+        let branch = branch?;
+        let branch = branch.0.name()?.unwrap();
         let branch = String::from(branch);
         for remote in &remotes {
             let spec_str = format!("{branch}..{remote}/{branch}", remote = *remote, branch = branch);
@@ -230,12 +227,12 @@ pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usi
             if rev.is_err() {
                 continue;
             }
-            let (from, to) = rev_from_to(&rev.unwrap());
+            let (from, to) = rev_from_to(&rev?);
             let ahead_behind = repo.graph_ahead_behind(from, to);
             if ahead_behind.is_err() {
                 continue;
             }
-            let ahead_behind = ahead_behind.unwrap();
+            let ahead_behind = ahead_behind?;
             result.push((String::from(*remote), branch.clone(), ahead_behind.0, ahead_behind.1))
         }
     }
@@ -245,7 +242,7 @@ pub fn ahead_behind_remote(path: &str) -> Result<Vec<(String, String, usize, usi
 
 pub fn fast_forward<P: AsRef<Path>>(path: &P, reference: &String) -> Result<(), Error> {
     if is_clean(path.as_ref().to_str().unwrap()) > 0 {
-        return Ok(());
+        return Err(Error::from_str("Repository is not clean"));
     }
 
     let repo = Repository::open(path)?;
@@ -310,7 +307,7 @@ pub fn behind_commits(path: &str, branch: &String) -> Result<Vec<CommitInfo>, Er
     let mut commits = vec![];
 
     for entry in revwalk.into_iter() {
-        let commit = repo.find_commit(entry.unwrap()).unwrap();
+        let commit = repo.find_commit(entry?)?;
         commits.push(CommitInfo::from(&commit));
     }
     Ok(commits)

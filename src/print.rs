@@ -35,11 +35,11 @@ impl FromStr for OutputType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err>{
         let res = match s {
-            "dir"                  | "d" => Option::Some(OutputType::Dir),
-            "modification" | "mod" | "m" => Option::Some(OutputType::Modification),
-            "time"                 | "t" => Option::Some(OutputType::Time),
-            "all"                        => Option::Some(OutputType::All),
-            _ => Option::None
+            "dir"                  | "d" => Some(OutputType::Dir),
+            "modification" | "mod" | "m" => Some(OutputType::Modification),
+            "time"                 | "t" => Some(OutputType::Time),
+            "all"                        => Some(OutputType::All),
+            _ => None
         };
 
         match res {
@@ -94,7 +94,7 @@ impl FromStr for SortType {
             "directory"     | "dir" | "d" => SortType::Dir,
             _                             => SortType::None,
         };
-        Result::Ok(sort)
+        Ok(sort)
     }
 }
 
