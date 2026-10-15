@@ -20,6 +20,37 @@ extern crate savefile_derive;
 
 fn main() {
     let mut opt: RgsOptStruct = RgsOptStruct::from_args();
+
+    if opt.list_profiles {
+        match RgsOptStruct::list_profiles() {
+            Ok(()) => process::exit(0),
+            Err(err) => {
+                eprintln!("cgs: {}", err);
+                process::exit(1);
+            }
+        }
+    }
+
+    if let Some(ref profile) = opt.set_profile {
+        match RgsOptStruct::set_default_profile(profile) {
+            Ok(()) => process::exit(0),
+            Err(err) => {
+                eprintln!("cgs: {}", err);
+                process::exit(1);
+            }
+        }
+    }
+
+    if opt.unset_profile {
+        match RgsOptStruct::unset_default_profile() {
+            Ok(()) => process::exit(0),
+            Err(err) => {
+                eprintln!("cgs: {}", err);
+                process::exit(1);
+            }
+        }
+    }
+
     let now = Instant::now();
 
     opt.load_profile();

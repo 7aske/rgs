@@ -1,11 +1,11 @@
 use glob::Pattern;
 use crate::print::{OutputType, SortType, SummaryType};
-use std::{io, env};
+use std::{io, env, fs};
 use std::collections::HashSet;
-use std::fs::{File};
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::iter::FromIterator;
-use std::io::{BufRead, Read};
+use std::io::BufRead;
 use structopt::StructOpt;
 use serde_derive::Deserialize;
 use toml::value::Table;
@@ -16,7 +16,7 @@ about = "Batch repository check tool (github.com/7aske/rgs)",
 author = "Nikola Tasić - 7aske.com",
 version = env!("CARGO_PKG_VERSION"))]
 pub struct RgsOptStruct {
-    #[structopt(short = "c", long = "code", env, help = "override CODE variable")]
+    #[structopt(short = "c", long = "code", env, default_value = "", help = "override CODE variable")]
     pub code: String,
     #[structopt(short = "C", long = "print-code", help = "print CODE variable")]
     pub print_code: bool,
@@ -34,6 +34,12 @@ pub struct RgsOptStruct {
     pub depth: usize,
     #[structopt(short = "p", long = "profile", help = "load profile configuration from 'coderc'")]
     pub profile: Option<String>,
+    #[structopt(long = "list-profiles", help = "list profiles from 'coderc'")]
+    pub list_profiles: bool,
+    #[structopt(long = "set-profile", name = "name", help = "set default profile in '~/.coderc'")]
+    pub set_profile: Option<String>,
+    #[structopt(long = "unset-profile", help = "unset default profile in '~/.coderc'")]
+    pub unset_profile: bool,
 
     #[structopt(short = "j", long = "jobs", help = "number of threads, default: number of logical cpus")]
     pub threads: Option<usize>,
@@ -106,49 +112,251 @@ impl RgsOptStruct {
         }
         if table.contains_key("branches") {
             self.branches = table.get("branches").unwrap().as_bool().unwrap();
+        } else if table.contains_key("branch") {
+            // Alias to support singular key in coderc files.
+            self.branches = table.get("branch").unwrap().as_bool().unwrap();
         }
     }
 
     pub fn load_profile(&mut self) {
-        let env_profile = env::var("RGS_PROFILE");
-        // if RGS_PROFILE and cli argument profile is not set we don't have
-        // anything to do.
-        if self.profile.is_none() && env_profile.is_err() {
-            return;
-        }
-
-        let profile = if env_profile.is_ok() {
-            env_profile.unwrap()
-        } else {
-            self.profile.clone().unwrap()
+        let config = match read_coderc() {
+            Some((content, _)) => content,
+            None => return,
         };
 
-        // If the RGS_PROFILE is set but it is set to an empty string, we don't
-        // have anything to do also.
+        let config: toml::Value = match toml::from_str(config.as_str()) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("cgs: failed to parse coderc: {}", e);
+                return;
+            }
+        };
+        let config = match config.as_table() {
+            Some(t) => t,
+            None => return,
+        };
+
+        let top_level = top_level_options(config);
+        if !top_level.is_empty() {
+            self.update_with(&top_level);
+        }
+
+        let profile = resolve_profile_name(&self.profile, config);
         if profile.is_empty() {
             return;
         }
 
-        let location_config = Path::new(&env::var("HOME").unwrap()).join(".config").join("coderc");
-        let location_home = Path::new(&env::var("HOME").unwrap()).join(".coderc");
-        let mut config_string = String::new();
-        if location_home.exists() {
-            let mut file = File::open(location_home).unwrap();
-            file.read_to_string(&mut config_string);
-        } else if location_config.exists() {
-            let mut file = File::open(location_config).unwrap();
-            file.read_to_string(&mut config_string);
-        }
-
-        let config: toml::Value = toml::from_str(config_string.as_str()).unwrap();
-        let config = config.as_table().unwrap();
-        if config.contains_key(&profile) {
-            let config = config.get(&profile).unwrap().as_table().unwrap();
-            self.update_with(config);
+        if let Some(toml::Value::Table(table)) = config.get(&profile) {
+            self.update_with(table);
         } else {
             eprintln!("cgs: profile '{}' not found", profile);
         }
     }
+
+    pub fn list_profiles() -> Result<(), String> {
+        let (content, _) = read_coderc().ok_or_else(|| String::from("coderc file not found"))?;
+        let config: toml::Value = toml::from_str(content.as_str())
+            .map_err(|e| format!("failed to parse coderc: {}", e))?;
+        let config = config.as_table()
+            .ok_or_else(|| String::from("invalid coderc format"))?;
+
+        let active = resolve_profile_name(&None, config);
+        let mut names: Vec<&String> = config.iter()
+            .filter(|(_, v)| v.is_table())
+            .map(|(k, _)| k)
+            .collect();
+        names.sort();
+
+        for name in names {
+            if *name == active {
+                println!("* {}", name);
+            } else {
+                println!("  {}", name);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_default_profile(name: &str) -> Result<(), String> {
+        if name.is_empty() {
+            return Err(String::from("profile name cannot be empty"));
+        }
+
+        let (home, config) = coderc_paths();
+        let content = if home.exists() {
+            fs::read_to_string(&home).map_err(|e| format!("failed to read {}: {}", home.display(), e))?
+        } else if config.exists() {
+            fs::read_to_string(&config).map_err(|e| format!("failed to read {}: {}", config.display(), e))?
+        } else {
+            return Err(String::from("coderc file not found"));
+        };
+
+        let parsed: toml::Value = toml::from_str(content.as_str())
+            .map_err(|e| format!("failed to parse coderc: {}", e))?;
+        let table = parsed.as_table()
+            .ok_or_else(|| String::from("invalid coderc format"))?;
+
+        match table.get(name) {
+            Some(toml::Value::Table(_)) => {}
+            _ => return Err(format!("profile '{}' not found", name)),
+        }
+
+        let new_content = upsert_profile_key(&content, name);
+        fs::write(&home, new_content)
+            .map_err(|e| format!("failed to write {}: {}", home.display(), e))?;
+        println!("profile set to '{}'", name);
+        Ok(())
+    }
+
+    pub fn unset_default_profile() -> Result<(), String> {
+        let (home, config) = coderc_paths();
+        let content = if home.exists() {
+            fs::read_to_string(&home).map_err(|e| format!("failed to read {}: {}", home.display(), e))?
+        } else if config.exists() {
+            fs::read_to_string(&config).map_err(|e| format!("failed to read {}: {}", config.display(), e))?
+        } else {
+            return Err(String::from("coderc file not found"));
+        };
+
+        let parsed: toml::Value = toml::from_str(content.as_str())
+            .map_err(|e| format!("failed to parse coderc: {}", e))?;
+        parsed.as_table()
+            .ok_or_else(|| String::from("invalid coderc format"))?;
+
+        let new_content = remove_profile_key(&content);
+        fs::write(&home, new_content)
+            .map_err(|e| format!("failed to write {}: {}", home.display(), e))?;
+        println!("profile unset");
+        Ok(())
+    }
+}
+
+fn coderc_paths() -> (PathBuf, PathBuf) {
+    let home_dir = env::var("HOME").unwrap();
+    let location_home = Path::new(&home_dir).join(".coderc");
+    let location_config = Path::new(&home_dir).join(".config").join("coderc");
+    (location_home, location_config)
+}
+
+fn read_coderc() -> Option<(String, PathBuf)> {
+    let (location_home, location_config) = coderc_paths();
+    if location_home.exists() {
+        fs::read_to_string(&location_home).ok().map(|s| (s, location_home))
+    } else if location_config.exists() {
+        fs::read_to_string(&location_config).ok().map(|s| (s, location_config))
+    } else {
+        None
+    }
+}
+
+fn resolve_profile_name(cli_profile: &Option<String>, config: &Table) -> String {
+    if let Ok(profile) = env::var("RGS_PROFILE") {
+        if !profile.is_empty() {
+            return profile;
+        }
+    }
+    if let Some(profile) = cli_profile {
+        if !profile.is_empty() {
+            return profile.clone();
+        }
+    }
+    if let Some(toml::Value::String(profile)) = config.get("profile") {
+        return profile.clone();
+    }
+    String::new()
+}
+
+fn upsert_profile_key(content: &str, name: &str) -> String {
+    let profile_line = format!("profile = \"{}\"", name);
+    let mut result = String::new();
+    let mut replaced = false;
+    let mut before_table = true;
+    let had_trailing_newline = content.is_empty() || content.ends_with('\n');
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if before_table && trimmed.starts_with('[') {
+            before_table = false;
+            if !replaced {
+                result.push_str(&profile_line);
+                result.push('\n');
+                if !result.ends_with("\n\n") {
+                    result.push('\n');
+                }
+                replaced = true;
+            }
+        }
+
+        if before_table {
+            let key = trimmed.split('=').next().unwrap_or("").trim();
+            if key == "profile" {
+                result.push_str(&profile_line);
+                result.push('\n');
+                replaced = true;
+                continue;
+            }
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    if !replaced {
+        if content.trim().is_empty() {
+            return format!("{}\n", profile_line);
+        }
+        return format!("{}\n\n{}", profile_line, content.trim_start());
+    }
+
+    if !had_trailing_newline && result.ends_with('\n') {
+        result.pop();
+    }
+    result
+}
+
+fn remove_profile_key(content: &str) -> String {
+    let mut result = String::new();
+    let mut before_table = true;
+    let had_trailing_newline = content.is_empty() || content.ends_with('\n');
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if before_table && trimmed.starts_with('[') {
+            before_table = false;
+        }
+
+        if before_table {
+            let key = trimmed.split('=').next().unwrap_or("").trim();
+            if key == "profile" {
+                continue;
+            }
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    // Normalize accidental triple newlines produced by removing top-level key.
+    while result.contains("\n\n\n") {
+        result = result.replace("\n\n\n", "\n\n");
+    }
+
+    if !had_trailing_newline && result.ends_with('\n') {
+        result.pop();
+    }
+    result
+}
+
+fn top_level_options(config: &Table) -> Table {
+    let mut top_level = Table::new();
+    for (key, value) in config.iter() {
+        if !value.is_table() {
+            top_level.insert(key.clone(), value.clone());
+        }
+    }
+    top_level
 }
 
 pub struct RgsOpt {

@@ -34,6 +34,9 @@ OPTIONS:
     -c, --code <code>          override CODE variable [env: CODE=/home/nik/.local/src]
     -D, --depth <depth>        project search recursive depth [default: 2]
     -p, --profile <profile>    load profile configuration from 'coderc'
+        --list-profiles        list profiles from 'coderc'
+        --set-profile <name>   set default profile in '~/.coderc'
+        --unset-profile         unset default profile in '~/.coderc'
     -s, --sort <sort>          sort by: directory (d), modifications (m), time (t), ahead-behind (a)
     -j, --jobs <threads>       number of threads, default: number of logical cpus
     -T, --timeout <timeout>    timeout in seconds between git fetches [default: 60]
@@ -182,16 +185,37 @@ Coderc file can be used to predefine some parameters that are often used. Or spe
 
 Profiles checked for `coderc` files are in order:
 
-`$HOME/.config/coderc`
 `$HOME/.coderc`
+`$HOME/.config/coderc`
 
 Files are based on TOML structure.
 
 ```
+code = "/home/nik/.local/src"
+sort = "d"
+branches = true
+profile = "work" # default profile
+
 [work] # profile name
 code = "/home/nik/.local/src/work"
 mod = true
 sort = "m"
+branch = true
 ```
 
-Profile is loaded by using `-p` flag e.g. `cgs -p work`.
+A top-level section can also define regular options (`code`, `sort`, `mod`, etc.). These are applied first, then the selected profile overrides them.
+
+A top-level `profile` property selects the default profile when neither `-p`/`--profile` nor `RGS_PROFILE` is set.
+
+Profile can also be loaded explicitly with `-p` flag e.g. `cgs -p work`.
+
+```
+# list available profiles (* marks the default)
+cgs --list-profiles
+
+# set default profile in ~/.coderc
+cgs --set-profile work
+
+# unset default profile from ~/.coderc
+cgs --unset-profile
+```
